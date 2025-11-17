@@ -1,1 +1,1440 @@
-<h1> hello world</h1>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>3D Drawing App</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: Arial, sans-serif;
+            overflow: hidden;
+            background: white;
+            color: black;
+        }
+        #container {
+            width: 100vw;
+            height: 100vh;
+            position: relative;
+        }
+        #threeCanvas {
+            width: 100%;
+            height: 100%;
+            display: block;
+        }
+        
+        #floatingPanel {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            background: white;
+            border: 2px solid black;
+            width: 280px;
+            box-shadow: 4px 4px 0 rgba(0,0,0,0.2);
+            z-index: 1000;
+        }
+        #panelHeader {
+            background: black;
+            color: white;
+            padding: 8px 12px;
+            cursor: move;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-weight: bold;
+            font-size: 14px;
+        }
+        #collapseBtn {
+            background: white;
+            color: black;
+            border: 1px solid white;
+            padding: 2px 8px;
+            cursor: pointer;
+            font-size: 12px;
+            font-weight: bold;
+        }
+        #collapseBtn:hover {
+            background: #ddd;
+        }
+        #panelContent {
+            padding: 12px;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            max-height: 70vh;
+            overflow-y: auto;
+        }
+        #panelContent.collapsed {
+            display: none;
+        }
+        
+        #drawCanvas {
+            width: 100%;
+            height: 200px;
+            background: white;
+            border: 2px solid black;
+            cursor: crosshair;
+        }
+        #drawCanvas.eraser {
+            cursor: cell;
+        }
+        
+        button {
+            padding: 8px;
+            background: white;
+            border: 2px solid black;
+            color: black;
+            cursor: pointer;
+            font-size: 12px;
+            font-weight: bold;
+        }
+        button:hover {
+            background: #f0f0f0;
+        }
+        button:active {
+            background: #ddd;
+        }
+        button:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+            color: #666;
+        }
+        button.active {
+            background: black;
+            color: white;
+        }
+        
+        .control-group {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            padding: 8px;
+            border: 1px solid black;
+        }
+        
+        .control-row {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .button-group {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 4px;
+        }
+        
+        input[type="color"] {
+            width: 40px;
+            height: 24px;
+            border: 2px solid black;
+            cursor: pointer;
+            padding: 0;
+        }
+        
+        input[type="range"] {
+            flex: 1;
+        }
+        
+        input[type="checkbox"], input[type="radio"] {
+            width: 16px;
+            height: 16px;
+            cursor: pointer;
+        }
+        
+        label {
+            font-size: 11px;
+            font-weight: bold;
+        }
+        
+        .section-title {
+            font-size: 12px;
+            font-weight: bold;
+            margin-top: 4px;
+            padding: 4px 0;
+            border-bottom: 2px solid black;
+        }
+        
+        #objectList {
+            min-height: 80px;
+            max-height: 150px;
+            overflow-y: auto;
+            border: 2px solid black;
+            background: white;
+        }
+        
+        .objectItem {
+            padding: 6px 8px;
+            border-bottom: 1px solid #ccc;
+            cursor: pointer;
+            font-size: 11px;
+            background: white;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .objectItem:hover {
+            background: #f0f0f0;
+        }
+        .objectItem.selected {
+            background: black;
+            color: white;
+            font-weight: bold;
+        }
+        .objectItem:last-child {
+            border-bottom: none;
+        }
+        
+        .objectName {
+            flex: 1;
+            cursor: pointer;
+        }
+        
+        .objectActions {
+            display: flex;
+            gap: 4px;
+        }
+        
+        .objectBtn {
+            padding: 2px 6px;
+            font-size: 10px;
+            border: 1px solid currentColor;
+        }
+        
+        .objectItem.selected .objectBtn {
+            background: white;
+            color: black;
+            border-color: white;
+        }
+        
+        .objectItem.selected .objectBtn:hover {
+            background: #ddd;
+        }
+        
+        .emptyList {
+            padding: 12px;
+            color: #666;
+            font-size: 11px;
+            text-align: center;
+            font-style: italic;
+        }
+        
+        .info-text {
+            font-size: 10px;
+            color: #666;
+            line-height: 1.4;
+        }
+        
+        .modal {
+            display: none;
+            position: fixed;
+            z-index: 2000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.5);
+        }
+        
+        .modal-content {
+            background: white;
+            border: 2px solid black;
+            margin: 15% auto;
+            padding: 20px;
+            width: 300px;
+            box-shadow: 4px 4px 0 rgba(0,0,0,0.3);
+        }
+        
+        .modal-header {
+            font-weight: bold;
+            margin-bottom: 12px;
+            padding-bottom: 8px;
+            border-bottom: 2px solid black;
+        }
+        
+        .modal-body {
+            margin-bottom: 12px;
+        }
+        
+        .modal-footer {
+            display: flex;
+            gap: 8px;
+            justify-content: flex-end;
+        }
+        
+        input[type="text"] {
+            width: 100%;
+            padding: 6px;
+            border: 2px solid black;
+            font-size: 12px;
+        }
+        
+        select {
+            width: 100%;
+            padding: 6px;
+            border: 2px solid black;
+            font-size: 12px;
+            background: white;
+            cursor: pointer;
+        }
+        
+        .radio-group {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            margin-top: 8px;
+        }
+    </style>
+</head>
+<body>
+    <div id="container">
+        <canvas id="threeCanvas"></canvas>
+        
+        <div id="floatingPanel">
+            <div id="panelHeader">
+                <span>3D DRAW TOOL</span>
+                <button id="collapseBtn">−</button>
+            </div>
+            <div id="panelContent">
+                <canvas id="drawCanvas"></canvas>
+                
+                <div class="button-group">
+                    <button id="brushBtn" class="active">BRUSH</button>
+                    <button id="eraserBtn">ERASER</button>
+                </div>
+                
+                <div class="control-group">
+                    <div class="control-row">
+                        <label>COLOR:</label>
+                        <input type="color" id="colorPicker" value="#ff0000">
+                    </div>
+                    <div class="control-row">
+                        <label>SIZE: <span id="brushValue">3</span>px</label>
+                    </div>
+                    <input type="range" id="brushSize" min="1" max="10" value="3">
+                </div>
+                
+                <button id="clearBtn">CLEAR CANVAS</button>
+                
+                <div class="section-title">3D PROJECTION</div>
+                <div class="control-group">
+                    <label>
+                        <input type="checkbox" id="volumeMode">
+                        PROJECT AS VOLUME (3D)
+                    </label>
+                    <div class="radio-group" id="geometryGroup" style="display: none;">
+                        <label>
+                            <input type="radio" name="geometry" value="conversion" checked>
+                            Conversion (Spheres)
+                        </label>
+                        <label>
+                            <input type="radio" name="geometry" value="individual">
+                            Individual (Icosahedrons)
+                        </label>
+                    </div>
+                </div>
+                
+                <button id="projectBtn">PROJECT TO 3D</button>
+                
+                <div class="section-title">3D OBJECTS</div>
+                <div id="objectList"></div>
+                
+                <div class="button-group" style="margin-top: 8px;">
+                    <button id="exportObjBtn" disabled>EXPORT OBJ</button>
+                    <button id="exportPlyBtn" disabled>EXPORT PLY</button>
+                    <button id="loadToCanvasBtn" disabled>LOAD TO CANVAS</button>
+                    <button id="deleteBtn" disabled>DELETE</button>
+                </div>
+                
+                <div class="section-title">CONTROLS</div>
+                <div class="control-group">
+                    <label>
+                        <input type="checkbox" id="translateGizmo">
+                        TRANSLATE GIZMO
+                    </label>
+                    <label>
+                        <input type="checkbox" id="rotateGizmo">
+                        ROTATE GIZMO
+                    </label>
+                    <label>
+                        <input type="checkbox" id="scaleGizmo">
+                        SCALE GIZMO
+                    </label>
+                </div>
+                
+                <div class="control-group">
+                    <label>
+                        <input type="checkbox" id="gridToggle" checked>
+                        SHOW GRID
+                    </label>
+                </div>
+                
+                <div class="info-text">
+                    <strong>CONTROLS:</strong><br>
+                    • Draw and project to 3D<br>
+                    • Click objects to select<br>
+                    • Middle-drag: orbit camera<br>
+                    • Right-drag: pan camera<br>
+                    • Scroll: zoom camera<br>
+                    • Use gizmos to transform
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Rename Modal -->
+    <div id="renameModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">RENAME OBJECT</div>
+            <div class="modal-body">
+                <input type="text" id="renameInput" placeholder="Enter new name">
+            </div>
+            <div class="modal-footer">
+                <button id="cancelRename">CANCEL</button>
+                <button id="confirmRename">RENAME</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Export Modal -->
+    <div id="exportModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">EXPORT OPTIONS</div>
+            <div class="modal-body">
+                <label>Select export type:</label>
+                <div class="radio-group">
+                    <label>
+                        <input type="radio" name="exportType" value="conversion" checked>
+                        Conversion (Spheres)
+                    </label>
+                    <label>
+                        <input type="radio" name="exportType" value="individual">
+                        Individual (Icosahedrons)
+                    </label>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button id="cancelExport">CANCEL</button>
+                <button id="confirmExport">EXPORT</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script>
+        // Drawing tool state
+        let currentTool = 'brush';
+        
+        // 2D Drawing Canvas
+        const drawCanvas = document.getElementById('drawCanvas');
+        const ctx = drawCanvas.getContext('2d');
+        drawCanvas.width = 256;
+        drawCanvas.height = 200;
+        
+        let isDrawing = false;
+        let currentColor = '#ff0000';
+        let brushSize = 3;
+        
+        document.getElementById('brushBtn').addEventListener('click', () => {
+            currentTool = 'brush';
+            document.getElementById('brushBtn').classList.add('active');
+            document.getElementById('eraserBtn').classList.remove('active');
+            drawCanvas.classList.remove('eraser');
+        });
+        
+        document.getElementById('eraserBtn').addEventListener('click', () => {
+            currentTool = 'eraser';
+            document.getElementById('eraserBtn').classList.add('active');
+            document.getElementById('brushBtn').classList.remove('active');
+            drawCanvas.classList.add('eraser');
+        });
+        
+        document.getElementById('colorPicker').addEventListener('input', (e) => {
+            currentColor = e.target.value;
+        });
+        
+        document.getElementById('brushSize').addEventListener('input', (e) => {
+            brushSize = parseInt(e.target.value);
+            document.getElementById('brushValue').textContent = brushSize;
+        });
+        
+        drawCanvas.addEventListener('mousedown', (e) => {
+            isDrawing = true;
+            const rect = drawCanvas.getBoundingClientRect();
+            const x = (e.clientX - rect.left) * (drawCanvas.width / rect.width);
+            const y = (e.clientY - rect.top) * (drawCanvas.height / rect.height);
+            ctx.beginPath();
+            ctx.moveTo(x, y);
+            
+            if (currentTool === 'eraser') {
+                ctx.globalCompositeOperation = 'destination-out';
+            } else {
+                ctx.globalCompositeOperation = 'source-over';
+            }
+        });
+        
+        drawCanvas.addEventListener('mousemove', (e) => {
+            if (!isDrawing) return;
+            const rect = drawCanvas.getBoundingClientRect();
+            const x = (e.clientX - rect.left) * (drawCanvas.width / rect.width);
+            const y = (e.clientY - rect.top) * (drawCanvas.height / rect.height);
+            ctx.lineTo(x, y);
+            ctx.strokeStyle = currentTool === 'eraser' ? 'rgba(0,0,0,1)' : currentColor;
+            ctx.lineWidth = brushSize;
+            ctx.lineCap = 'round';
+            ctx.stroke();
+        });
+        
+        drawCanvas.addEventListener('mouseup', () => {
+            isDrawing = false;
+            ctx.globalCompositeOperation = 'source-over';
+        });
+        
+        drawCanvas.addEventListener('mouseleave', () => {
+            isDrawing = false;
+            ctx.globalCompositeOperation = 'source-over';
+        });
+        
+        document.getElementById('clearBtn').addEventListener('click', () => {
+            ctx.clearRect(0, 0, drawCanvas.width, drawCanvas.height);
+        });
+        
+        // Volume mode geometry selection
+        document.getElementById('volumeMode').addEventListener('change', (e) => {
+            document.getElementById('geometryGroup').style.display = e.target.checked ? 'block' : 'none';
+        });
+        
+        // Floating panel drag
+        const panel = document.getElementById('floatingPanel');
+        const header = document.getElementById('panelHeader');
+        let isDraggingPanel = false;
+        let panelOffset = { x: 0, y: 0 };
+        
+        header.addEventListener('mousedown', (e) => {
+            if (e.target === document.getElementById('collapseBtn')) return;
+            isDraggingPanel = true;
+            panelOffset.x = e.clientX - panel.offsetLeft;
+            panelOffset.y = e.clientY - panel.offsetTop;
+        });
+        
+        document.addEventListener('mousemove', (e) => {
+            if (!isDraggingPanel) return;
+            panel.style.left = (e.clientX - panelOffset.x) + 'px';
+            panel.style.top = (e.clientY - panelOffset.y) + 'px';
+        });
+        
+        document.addEventListener('mouseup', () => {
+            isDraggingPanel = false;
+        });
+        
+        document.getElementById('collapseBtn').addEventListener('click', () => {
+            const content = document.getElementById('panelContent');
+            const btn = document.getElementById('collapseBtn');
+            content.classList.toggle('collapsed');
+            btn.textContent = content.classList.contains('collapsed') ? '+' : '−';
+        });
+        
+        // Three.js Scene
+        const threeCanvas = document.getElementById('threeCanvas');
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0xffffff);
+        
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        camera.position.set(5, 5, 5);
+        camera.lookAt(0, 0, 0);
+        
+        const renderer = new THREE.WebGLRenderer({ canvas: threeCanvas, antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        
+        // Lighting
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+        scene.add(ambientLight);
+        const directionalLight = new THREE.DirectionalLight(0xffffff, 0.4);
+        directionalLight.position.set(5, 5, 5);
+        scene.add(directionalLight);
+        
+        // Grid
+        const gridHelper = new THREE.GridHelper(10, 10, 0x000000, 0x666666);
+        scene.add(gridHelper);
+        
+        document.getElementById('gridToggle').addEventListener('change', (e) => {
+            gridHelper.visible = e.target.checked;
+        });
+        
+        // Objects
+        let objects = [];
+        let selectedObject = null;
+        let objectCounter = 0;
+        
+        // Camera controls with fixed panning
+        let isOrbiting = false;
+        let isPanning = false;
+        let previousMousePosition = { x: 0, y: 0 };
+        const orbitSpeed = 0.005;
+        const panSpeed = 0.01;
+        let cameraDistance = Math.sqrt(camera.position.x ** 2 + camera.position.y ** 2 + camera.position.z ** 2);
+        let theta = Math.atan2(camera.position.x, camera.position.z);
+        let phi = Math.acos(camera.position.y / cameraDistance);
+        const lookAtTarget = new THREE.Vector3(0, 0, 0);
+        
+        function updateCameraPosition() {
+            camera.position.x = lookAtTarget.x + cameraDistance * Math.sin(phi) * Math.sin(theta);
+            camera.position.y = lookAtTarget.y + cameraDistance * Math.cos(phi);
+            camera.position.z = lookAtTarget.z + cameraDistance * Math.sin(phi) * Math.cos(theta);
+            camera.lookAt(lookAtTarget);
+        }
+        
+        // Gizmos - Improved Implementation
+        const gizmos = {
+            translate: null,
+            rotate: null,
+            scale: null
+        };
+        
+        function createTranslateGizmo() {
+            const group = new THREE.Group();
+            const arrowLength = 1.5;
+            const arrowHeadLength = 0.3;
+            const arrowHeadWidth = 0.15;
+            
+            // X axis (red)
+            const xGeo = new THREE.CylinderGeometry(0.03, 0.03, arrowLength, 8);
+            const xMat = new THREE.MeshBasicMaterial({ color: 0xff0000 });
+            const xArrow = new THREE.Mesh(xGeo, xMat);
+            xArrow.rotation.z = -Math.PI / 2;
+            xArrow.position.x = arrowLength / 2;
+            xArrow.userData.axis = 'x';
+            xArrow.userData.gizmoType = 'translate';
+            
+            const xHeadGeo = new THREE.ConeGeometry(arrowHeadWidth, arrowHeadLength, 8);
+            const xHead = new THREE.Mesh(xHeadGeo, xMat);
+            xHead.rotation.z = -Math.PI / 2;
+            xHead.position.x = arrowLength;
+            xHead.userData.axis = 'x';
+            xHead.userData.gizmoType = 'translate';
+            
+            group.add(xArrow);
+            group.add(xHead);
+            
+            // Y axis (green)
+            const yGeo = new THREE.CylinderGeometry(0.03, 0.03, arrowLength, 8);
+            const yMat = new THREE.MeshBasicMaterial({ color: 0x00ff00 });
+            const yArrow = new THREE.Mesh(yGeo, yMat);
+            yArrow.position.y = arrowLength / 2;
+            yArrow.userData.axis = 'y';
+            yArrow.userData.gizmoType = 'translate';
+            
+            const yHeadGeo = new THREE.ConeGeometry(arrowHeadWidth, arrowHeadLength, 8);
+            const yHead = new THREE.Mesh(yHeadGeo, yMat);
+            yHead.position.y = arrowLength;
+            yHead.userData.axis = 'y';
+            yHead.userData.gizmoType = 'translate';
+            
+            group.add(yArrow);
+            group.add(yHead);
+            
+            // Z axis (blue)
+            const zGeo = new THREE.CylinderGeometry(0.03, 0.03, arrowLength, 8);
+            const zMat = new THREE.MeshBasicMaterial({ color: 0x0000ff });
+            const zArrow = new THREE.Mesh(zGeo, zMat);
+            zArrow.rotation.x = Math.PI / 2;
+            zArrow.position.z = arrowLength / 2;
+            zArrow.userData.axis = 'z';
+            zArrow.userData.gizmoType = 'translate';
+            
+            const zHeadGeo = new THREE.ConeGeometry(arrowHeadWidth, arrowHeadLength, 8);
+            const zHead = new THREE.Mesh(zHeadGeo, zMat);
+            zHead.rotation.x = Math.PI / 2;
+            zHead.position.z = arrowLength;
+            zHead.userData.axis = 'z';
+            zHead.userData.gizmoType = 'translate';
+            
+            group.add(zArrow);
+            group.add(zHead);
+            
+            group.visible = false;
+            return group;
+        }
+        
+        function createRotateGizmo() {
+            const group = new THREE.Group();
+            const radius = 1.5;
+            const segments = 64;
+            
+            // X axis (red)
+            const xGeo = new THREE.TorusGeometry(radius, 0.03, 16, segments);
+            const xMat = new THREE.MeshBasicMaterial({ color: 0xff0000 });
+            const xTorus = new THREE.Mesh(xGeo, xMat);
+            xTorus.rotation.y = Math.PI / 2;
+            xTorus.userData.axis = 'x';
+            xTorus.userData.gizmoType = 'rotate';
+            group.add(xTorus);
+            
+            // Y axis (green)
+            const yGeo = new THREE.TorusGeometry(radius, 0.03, 16, segments);
+            const yMat = new THREE.MeshBasicMaterial({ color: 0x00ff00 });
+            const yTorus = new THREE.Mesh(yGeo, yMat);
+            yTorus.rotation.x = Math.PI / 2;
+            yTorus.userData.axis = 'y';
+            yTorus.userData.gizmoType = 'rotate';
+            group.add(yTorus);
+            
+            // Z axis (blue)
+            const zGeo = new THREE.TorusGeometry(radius, 0.03, 16, segments);
+            const zMat = new THREE.MeshBasicMaterial({ color: 0x0000ff });
+            const zTorus = new THREE.Mesh(zGeo, zMat);
+            zTorus.userData.axis = 'z';
+            zTorus.userData.gizmoType = 'rotate';
+            group.add(zTorus);
+            
+            group.visible = false;
+            return group;
+        }
+        
+        function createScaleGizmo() {
+            const group = new THREE.Group();
+            const arrowLength = 1.5;
+            const cubeSize = 0.15;
+            
+            // X axis (red)
+            const xGeo = new THREE.CylinderGeometry(0.03, 0.03, arrowLength, 8);
+            const xMat = new THREE.MeshBasicMaterial({ color: 0xff0000 });
+            const xArrow = new THREE.Mesh(xGeo, xMat);
+            xArrow.rotation.z = -Math.PI / 2;
+            xArrow.position.x = arrowLength / 2;
+            xArrow.userData.axis = 'x';
+            xArrow.userData.gizmoType = 'scale';
+            
+            const xCubeGeo = new THREE.BoxGeometry(cubeSize, cubeSize, cubeSize);
+            const xCube = new THREE.Mesh(xCubeGeo, xMat);
+            xCube.position.x = arrowLength;
+            xCube.userData.axis = 'x';
+            xCube.userData.gizmoType = 'scale';
+            
+            group.add(xArrow);
+            group.add(xCube);
+            
+            // Y axis (green)
+            const yGeo = new THREE.CylinderGeometry(0.03, 0.03, arrowLength, 8);
+            const yMat = new THREE.MeshBasicMaterial({ color: 0x00ff00 });
+            const yArrow = new THREE.Mesh(yGeo, yMat);
+            yArrow.position.y = arrowLength / 2;
+            yArrow.userData.axis = 'y';
+            yArrow.userData.gizmoType = 'scale';
+            
+            const yCubeGeo = new THREE.BoxGeometry(cubeSize, cubeSize, cubeSize);
+            const yCube = new THREE.Mesh(yCubeGeo, yMat);
+            yCube.position.y = arrowLength;
+            yCube.userData.axis = 'y';
+            yCube.userData.gizmoType = 'scale';
+            
+            group.add(yArrow);
+            group.add(yCube);
+            
+            // Z axis (blue)
+            const zGeo = new THREE.CylinderGeometry(0.03, 0.03, arrowLength, 8);
+            const zMat = new THREE.MeshBasicMaterial({ color: 0x0000ff });
+            const zArrow = new THREE.Mesh(zGeo, zMat);
+            zArrow.rotation.x = Math.PI / 2;
+            zArrow.position.z = arrowLength / 2;
+            zArrow.userData.axis = 'z';
+            zArrow.userData.gizmoType = 'scale';
+            
+            const zCubeGeo = new THREE.BoxGeometry(cubeSize, cubeSize, cubeSize);
+            const zCube = new THREE.Mesh(zCubeGeo, zMat);
+            zCube.position.z = arrowLength;
+            zCube.userData.axis = 'z';
+            zCube.userData.gizmoType = 'scale';
+            
+            group.add(zArrow);
+            group.add(zCube);
+            
+            group.visible = false;
+            return group;
+        }
+        
+        gizmos.translate = createTranslateGizmo();
+        gizmos.rotate = createRotateGizmo();
+        gizmos.scale = createScaleGizmo();
+        
+        scene.add(gizmos.translate);
+        scene.add(gizmos.rotate);
+        scene.add(gizmos.scale);
+        
+        // Gizmo checkboxes
+        document.getElementById('translateGizmo').addEventListener('change', (e) => {
+            if (e.target.checked) {
+                document.getElementById('rotateGizmo').checked = false;
+                document.getElementById('scaleGizmo').checked = false;
+            }
+            updateGizmoVisibility();
+        });
+        
+        document.getElementById('rotateGizmo').addEventListener('change', (e) => {
+            if (e.target.checked) {
+                document.getElementById('translateGizmo').checked = false;
+                document.getElementById('scaleGizmo').checked = false;
+            }
+            updateGizmoVisibility();
+        });
+        
+        document.getElementById('scaleGizmo').addEventListener('change', (e) => {
+            if (e.target.checked) {
+                document.getElementById('translateGizmo').checked = false;
+                document.getElementById('rotateGizmo').checked = false;
+            }
+            updateGizmoVisibility();
+        });
+        
+        function updateGizmoVisibility() {
+            gizmos.translate.visible = document.getElementById('translateGizmo').checked && selectedObject !== null;
+            gizmos.rotate.visible = document.getElementById('rotateGizmo').checked && selectedObject !== null;
+            gizmos.scale.visible = document.getElementById('scaleGizmo').checked && selectedObject !== null;
+            
+            if (selectedObject) {
+                gizmos.translate.position.copy(selectedObject.position);
+                gizmos.rotate.position.copy(selectedObject.position);
+                gizmos.scale.position.copy(selectedObject.position);
+            }
+        }
+        
+        // Create volumetric mesh from drawing
+        function createVolumetricMesh(imageData, color, geometryType) {
+            const spheres = [];
+            const sampleStep = 2;
+            
+            for (let y = 0; y < drawCanvas.height; y += sampleStep) {
+                for (let x = 0; x < drawCanvas.width; x += sampleStep) {
+                    const idx = (y * drawCanvas.width + x) * 4;
+                    const alpha = imageData.data[idx + 3];
+                    
+                    if (alpha > 128) {
+                        const r = imageData.data[idx];
+                        const g = imageData.data[idx + 1];
+                        const b = imageData.data[idx + 2];
+                        
+                        const nx = (x / drawCanvas.width) * 2 - 1;
+                        const ny = -(y / drawCanvas.height) * 2 + 1;
+                        
+                        spheres.push({
+                            x: nx * 2,
+                            y: ny * 2,
+                            z: 0,
+                            r: r / 255,
+                            g: g / 255,
+                            b: b / 255
+                        });
+                    }
+                }
+            }
+            
+            if (spheres.length === 0) return null;
+            
+            const geometry = new THREE.BufferGeometry();
+            const vertices = [];
+            const colors = [];
+            const sphereRadius = 0.08;
+            
+            // Choose geometry based on type
+            const sphereGeo = geometryType === 'individual' 
+                ? new THREE.IcosahedronGeometry(sphereRadius, 1)
+                : new THREE.SphereGeometry(sphereRadius, 8, 8);
+            const spherePositions = sphereGeo.attributes.position.array;
+            
+            spheres.forEach(sphere => {
+                for (let i = 0; i < spherePositions.length; i += 3) {
+                    vertices.push(
+                        spherePositions[i] + sphere.x,
+                        spherePositions[i + 1] + sphere.y,
+                        spherePositions[i + 2] + sphere.z
+                    );
+                    colors.push(sphere.r, sphere.g, sphere.b);
+                }
+            });
+            
+            geometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
+            geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+            geometry.computeVertexNormals();
+            
+            const material = new THREE.MeshLambertMaterial({
+                vertexColors: true,
+                side: THREE.DoubleSide
+            });
+            
+            const mesh = new THREE.Mesh(geometry, material);
+            mesh.userData.sphereData = spheres;
+            mesh.userData.geometryType = geometryType;
+            return mesh;
+        }
+        
+        // Project to 3D
+        document.getElementById('projectBtn').addEventListener('click', () => {
+            const volumeMode = document.getElementById('volumeMode').checked;
+            const imageData = ctx.getImageData(0, 0, drawCanvas.width, drawCanvas.height);
+            
+            let mesh;
+            
+            if (volumeMode) {
+                const geometryType = document.querySelector('input[name="geometry"]:checked').value;
+                mesh = createVolumetricMesh(imageData, currentColor, geometryType);
+                if (!mesh) {
+                    alert('No drawing detected! Draw something first.');
+                    return;
+                }
+            } else {
+                const texture = new THREE.CanvasTexture(drawCanvas);
+                texture.needsUpdate = true;
+                
+                const geometry = new THREE.PlaneGeometry(2, 2);
+                const material = new THREE.MeshBasicMaterial({ 
+                    map: texture, 
+                    side: THREE.DoubleSide,
+                    transparent: true,
+                    alphaTest: 0.1
+                });
+                mesh = new THREE.Mesh(geometry, material);
+                mesh.userData.canvasData = imageData;
+            }
+            
+            mesh.position.z = objects.length * -0.5;
+            mesh.userData.id = ++objectCounter;
+            mesh.userData.name = `${volumeMode ? 'Volume' : 'Drawing'} ${objectCounter}`;
+            mesh.userData.isVolume = volumeMode;
+            
+            scene.add(mesh);
+            objects.push(mesh);
+            
+            updateObjectList();
+            selectObject(mesh);
+        });
+        
+        function updateObjectList() {
+            const list = document.getElementById('objectList');
+            list.innerHTML = '';
+            if (objects.length === 0) {
+                list.innerHTML = '<div class="emptyList">No objects yet</div>';
+                return;
+            }
+            objects.forEach(obj => {
+                const item = document.createElement('div');
+                item.className = 'objectItem';
+                if (selectedObject === obj) item.classList.add('selected');
+                
+                const nameSpan = document.createElement('span');
+                nameSpan.className = 'objectName';
+                nameSpan.textContent = obj.userData.name;
+                nameSpan.addEventListener('click', () => selectObject(obj));
+                
+                const actions = document.createElement('div');
+                actions.className = 'objectActions';
+                
+                const renameBtn = document.createElement('button');
+                renameBtn.className = 'objectBtn';
+                renameBtn.textContent = 'R';
+                renameBtn.title = 'Rename';
+                renameBtn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    showRenameModal(obj);
+                });
+                
+                actions.appendChild(renameBtn);
+                item.appendChild(nameSpan);
+                item.appendChild(actions);
+                list.appendChild(item);
+            });
+        }
+        
+        function selectObject(obj) {
+            selectedObject = obj;
+            updateObjectList();
+            updateGizmoVisibility();
+            document.getElementById('deleteBtn').disabled = false;
+            document.getElementById('exportObjBtn').disabled = false;
+            document.getElementById('exportPlyBtn').disabled = false;
+            document.getElementById('loadToCanvasBtn').disabled = !obj.userData.canvasData && !obj.userData.isVolume;
+        }
+        
+        function deselectObject() {
+            selectedObject = null;
+            updateObjectList();
+            updateGizmoVisibility();
+            document.getElementById('deleteBtn').disabled = true;
+            document.getElementById('exportObjBtn').disabled = true;
+            document.getElementById('exportPlyBtn').disabled = true;
+            document.getElementById('loadToCanvasBtn').disabled = true;
+        }
+        
+        document.getElementById('deleteBtn').addEventListener('click', () => {
+            if (selectedObject) {
+                scene.remove(selectedObject);
+                objects = objects.filter(obj => obj !== selectedObject);
+                deselectObject();
+                updateObjectList();
+            }
+        });
+        
+        // Rename modal
+        let objectToRename = null;
+        
+        function showRenameModal(obj) {
+            objectToRename = obj;
+            document.getElementById('renameInput').value = obj.userData.name;
+            document.getElementById('renameModal').style.display = 'block';
+            document.getElementById('renameInput').focus();
+            document.getElementById('renameInput').select();
+        }
+        
+        document.getElementById('cancelRename').addEventListener('click', () => {
+            document.getElementById('renameModal').style.display = 'none';
+            objectToRename = null;
+        });
+        
+        document.getElementById('confirmRename').addEventListener('click', () => {
+            if (objectToRename) {
+                const newName = document.getElementById('renameInput').value.trim();
+                if (newName) {
+                    objectToRename.userData.name = newName;
+                    updateObjectList();
+                }
+                document.getElementById('renameModal').style.display = 'none';
+                objectToRename = null;
+            }
+        });
+        
+        document.getElementById('renameInput').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                document.getElementById('confirmRename').click();
+            }
+        });
+        
+        // Load to canvas
+        document.getElementById('loadToCanvasBtn').addEventListener('click', () => {
+            if (!selectedObject) return;
+            
+            ctx.clearRect(0, 0, drawCanvas.width, drawCanvas.height);
+            
+            if (selectedObject.userData.canvasData) {
+                ctx.putImageData(selectedObject.userData.canvasData, 0, 0);
+            } else if (selectedObject.userData.isVolume && selectedObject.material.map) {
+                const img = selectedObject.material.map.image;
+                ctx.drawImage(img, 0, 0, drawCanvas.width, drawCanvas.height);
+            }
+        });
+        
+        // Export functions
+        let exportFormat = '';
+        
+        document.getElementById('exportObjBtn').addEventListener('click', () => {
+            if (!selectedObject) return;
+            exportFormat = 'obj';
+            if (selectedObject.userData.isVolume) {
+                showExportModal();
+            } else {
+                exportGeometry('conversion');
+            }
+        });
+        
+        document.getElementById('exportPlyBtn').addEventListener('click', () => {
+            if (!selectedObject) return;
+            exportFormat = 'ply';
+            if (selectedObject.userData.isVolume) {
+                showExportModal();
+            } else {
+                exportGeometry('conversion');
+            }
+        });
+        
+        function showExportModal() {
+            document.getElementById('exportModal').style.display = 'block';
+        }
+        
+        document.getElementById('cancelExport').addEventListener('click', () => {
+            document.getElementById('exportModal').style.display = 'none';
+        });
+        
+        document.getElementById('confirmExport').addEventListener('click', () => {
+            const exportType = document.querySelector('input[name="exportType"]:checked').value;
+            document.getElementById('exportModal').style.display = 'none';
+            exportGeometry(exportType);
+        });
+        
+        function exportGeometry(geometryType) {
+            if (!selectedObject) return;
+            
+            let geometry;
+            
+            if (selectedObject.userData.isVolume && selectedObject.userData.sphereData) {
+                // Recreate geometry with selected type
+                const spheres = selectedObject.userData.sphereData;
+                geometry = new THREE.BufferGeometry();
+                const vertices = [];
+                const colors = [];
+                const sphereRadius = 0.08;
+                
+                const sphereGeo = geometryType === 'individual'
+                    ? new THREE.IcosahedronGeometry(sphereRadius, 1)
+                    : new THREE.SphereGeometry(sphereRadius, 8, 8);
+                const spherePositions = sphereGeo.attributes.position.array;
+                
+                spheres.forEach(sphere => {
+                    for (let i = 0; i < spherePositions.length; i += 3) {
+                        vertices.push(
+                            spherePositions[i] + sphere.x,
+                            spherePositions[i + 1] + sphere.y,
+                            spherePositions[i + 2] + sphere.z
+                        );
+                        colors.push(sphere.r, sphere.g, sphere.b);
+                    }
+                });
+                
+                geometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
+                geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+                geometry.computeVertexNormals();
+            } else {
+                geometry = selectedObject.geometry;
+            }
+            
+            if (exportFormat === 'obj') {
+                exportOBJ(geometry, selectedObject.userData.name);
+            } else if (exportFormat === 'ply') {
+                exportPLY(geometry, selectedObject.userData.name);
+            }
+        }
+        
+        function exportOBJ(geometry, filename) {
+            const positions = geometry.attributes.position.array;
+            const colors = geometry.attributes.color ? geometry.attributes.color.array : null;
+            
+            let objContent = '# Exported from 3D Drawing App\n';
+            objContent += `o ${filename}\n`;
+            
+            // Vertices
+            for (let i = 0; i < positions.length; i += 3) {
+                const r = colors ? colors[i] : 1;
+                const g = colors ? colors[i + 1] : 1;
+                const b = colors ? colors[i + 2] : 1;
+                objContent += `v ${positions[i]} ${positions[i + 1]} ${positions[i + 2]} ${r} ${g} ${b}\n`;
+            }
+            
+            // Faces
+            const numVertices = positions.length / 3;
+            for (let i = 0; i < numVertices; i += 3) {
+                objContent += `f ${i + 1} ${i + 2} ${i + 3}\n`;
+            }
+            
+            downloadFile(objContent, `${filename}.obj`, 'text/plain');
+        }
+        
+        function exportPLY(geometry, filename) {
+            const positions = geometry.attributes.position.array;
+            const colors = geometry.attributes.color ? geometry.attributes.color.array : null;
+            const numVertices = positions.length / 3;
+            const numFaces = numVertices / 3;
+            
+            let plyContent = 'ply\n';
+            plyContent += 'format ascii 1.0\n';
+            plyContent += `element vertex ${numVertices}\n`;
+            plyContent += 'property float x\n';
+            plyContent += 'property float y\n';
+            plyContent += 'property float z\n';
+            if (colors) {
+                plyContent += 'property uchar red\n';
+                plyContent += 'property uchar green\n';
+                plyContent += 'property uchar blue\n';
+            }
+            plyContent += `element face ${numFaces}\n`;
+            plyContent += 'property list uchar int vertex_indices\n';
+            plyContent += 'end_header\n';
+            
+            // Vertices
+            for (let i = 0; i < positions.length; i += 3) {
+                plyContent += `${positions[i]} ${positions[i + 1]} ${positions[i + 2]}`;
+                if (colors) {
+                    const r = Math.floor(colors[i] * 255);
+                    const g = Math.floor(colors[i + 1] * 255);
+                    const b = Math.floor(colors[i + 2] * 255);
+                    plyContent += ` ${r} ${g} ${b}`;
+                }
+                plyContent += '\n';
+            }
+            
+            // Faces
+            for (let i = 0; i < numVertices; i += 3) {
+                plyContent += `3 ${i} ${i + 1} ${i + 2}\n`;
+            }
+            
+            downloadFile(plyContent, `${filename}.ply`, 'text/plain');
+        }
+        
+        function downloadFile(content, filename, mimeType) {
+            const blob = new Blob([content], { type: mimeType });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = filename;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            URL.revokeObjectURL(url);
+        }
+        
+        // Mouse interaction - IMPROVED GIZMO HANDLING
+        const raycaster = new THREE.Raycaster();
+        const mouse = new THREE.Vector2();
+        let isDraggingGizmo = false;
+        let activeGizmo = null;
+        let activeAxis = null;
+        let dragPlane = new THREE.Plane();
+        let dragStart = new THREE.Vector3();
+        let dragCurrent = new THREE.Vector3();
+        let objectStartPosition = new THREE.Vector3();
+        let objectStartRotation = new THREE.Euler();
+        let objectStartScale = new THREE.Vector3();
+        let initialMouseAngle = 0;
+        
+        function getMousePosition(e) {
+            const rect = threeCanvas.getBoundingClientRect();
+            mouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+            mouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+        }
+        
+        function getGizmoObjects() {
+            const gizmoObjects = [];
+            if (gizmos.translate.visible) {
+                gizmos.translate.children.forEach(child => {
+                    if (child.isMesh) gizmoObjects.push(child);
+                });
+            }
+            if (gizmos.rotate.visible) {
+                gizmos.rotate.children.forEach(child => {
+                    if (child.isMesh) gizmoObjects.push(child);
+                });
+            }
+            if (gizmos.scale.visible) {
+                gizmos.scale.children.forEach(child => {
+                    if (child.isMesh) gizmoObjects.push(child);
+                });
+            }
+            return gizmoObjects;
+        }
+        
+        threeCanvas.addEventListener('mousedown', (e) => {
+            if (isDraggingPanel) return;
+            
+            getMousePosition(e);
+            
+            if (e.button === 1) {
+                isOrbiting = true;
+                e.preventDefault();
+                return;
+            }
+            
+            if (e.button === 2) {
+                isPanning = true;
+                e.preventDefault();
+                return;
+            }
+            
+            if (e.button === 0) {
+                raycaster.setFromCamera(mouse, camera);
+                
+                // Check gizmo intersection first
+                const gizmoObjects = getGizmoObjects();
+                const gizmoIntersects = raycaster.intersectObjects(gizmoObjects, false);
+                
+                if (gizmoIntersects.length > 0 && selectedObject) {
+                    isDraggingGizmo = true;
+                    const intersectedObj = gizmoIntersects[0].object;
+                    activeAxis = intersectedObj.userData.axis;
+                    activeGizmo = intersectedObj.userData.gizmoType;
+                    
+                    // Set up drag plane based on axis
+                    const cameraDir = new THREE.Vector3();
+                    camera.getWorldDirection(cameraDir);
+                    
+                    if (activeGizmo === 'translate') {
+                        // For translate, use a plane perpendicular to camera for the drag axis
+                        if (activeAxis === 'x') {
+                            const normal = new THREE.Vector3(0, 0, 1).cross(new THREE.Vector3(1, 0, 0));
+                            if (normal.length() < 0.1) normal.set(0, 1, 0);
+                            normal.normalize();
+                            dragPlane.setFromNormalAndCoplanarPoint(normal, selectedObject.position);
+                        } else if (activeAxis === 'y') {
+                            const normal = new THREE.Vector3(1, 0, 0).cross(new THREE.Vector3(0, 1, 0));
+                            if (normal.length() < 0.1) normal.set(0, 0, 1);
+                            normal.normalize();
+                            dragPlane.setFromNormalAndCoplanarPoint(normal, selectedObject.position);
+                        } else if (activeAxis === 'z') {
+                            const normal = new THREE.Vector3(0, 1, 0).cross(new THREE.Vector3(0, 0, 1));
+                            if (normal.length() < 0.1) normal.set(1, 0, 0);
+                            normal.normalize();
+                            dragPlane.setFromNormalAndCoplanarPoint(normal, selectedObject.position);
+                        }
+                    } else {
+                        // For rotate and scale, use plane facing camera
+                        dragPlane.setFromNormalAndCoplanarPoint(cameraDir.negate(), selectedObject.position);
+                    }
+                    
+                    raycaster.ray.intersectPlane(dragPlane, dragStart);
+                    objectStartPosition.copy(selectedObject.position);
+                    objectStartRotation.copy(selectedObject.rotation);
+                    objectStartScale.copy(selectedObject.scale);
+                    
+                    // Calculate initial angle for rotation
+                    if (activeGizmo === 'rotate') {
+                        const offset = dragStart.clone().sub(selectedObject.position);
+                        initialMouseAngle = Math.atan2(offset.y, offset.x);
+                    }
+                    
+                    e.preventDefault();
+                } else {
+                    // Check object intersection
+                    const intersects = raycaster.intersectObjects(objects);
+                    
+                    if (intersects.length > 0) {
+                        selectObject(intersects[0].object);
+                    } else {
+                        deselectObject();
+                    }
+                }
+            }
+            
+            previousMousePosition = { x: e.clientX, y: e.clientY };
+        });
+        
+        threeCanvas.addEventListener('mousemove', (e) => {
+            if (isDraggingPanel) return;
+            
+            getMousePosition(e);
+            
+            if (isOrbiting) {
+                const deltaX = e.clientX - previousMousePosition.x;
+                const deltaY = e.clientY - previousMousePosition.y;
+                
+                theta -= deltaX * orbitSpeed;
+                phi -= deltaY * orbitSpeed;
+                phi = Math.max(0.1, Math.min(Math.PI - 0.1, phi));
+                
+                updateCameraPosition();
+            } else if (isPanning) {
+                const deltaX = e.clientX - previousMousePosition.x;
+                const deltaY = e.clientY - previousMousePosition.y;
+                
+                const distance = camera.position.distanceTo(lookAtTarget);
+                const panScale = distance * panSpeed;
+                
+                const cameraRight = new THREE.Vector3();
+                camera.getWorldDirection(cameraRight);
+                cameraRight.cross(new THREE.Vector3(0, 1, 0)).normalize();
+                
+                const cameraUp = new THREE.Vector3();
+                cameraUp.crossVectors(cameraRight, camera.getWorldDirection(new THREE.Vector3())).normalize();
+                
+                lookAtTarget.add(cameraRight.multiplyScalar(-deltaX * panScale));
+                lookAtTarget.add(cameraUp.multiplyScalar(deltaY * panScale));
+                
+                updateCameraPosition();
+            } else if (isDraggingGizmo && selectedObject) {
+                raycaster.setFromCamera(mouse, camera);
+                raycaster.ray.intersectPlane(dragPlane, dragCurrent);
+                
+                if (activeGizmo === 'translate') {
+                    const delta = dragCurrent.clone().sub(dragStart);
+                    
+                    if (activeAxis === 'x') {
+                        selectedObject.position.x = objectStartPosition.x + delta.x;
+                    } else if (activeAxis === 'y') {
+                        selectedObject.position.y = objectStartPosition.y + delta.y;
+                    } else if (activeAxis === 'z') {
+                        selectedObject.position.z = objectStartPosition.z + delta.z;
+                    }
+                    
+                    updateGizmoVisibility();
+                    
+                } else if (activeGizmo === 'rotate') {
+                    const offset = dragCurrent.clone().sub(selectedObject.position);
+                    const currentAngle = Math.atan2(offset.y, offset.x);
+                    const deltaAngle = currentAngle - initialMouseAngle;
+                    
+                    if (activeAxis === 'x') {
+                        selectedObject.rotation.x = objectStartRotation.x + deltaAngle;
+                    } else if (activeAxis === 'y') {
+                        selectedObject.rotation.y = objectStartRotation.y + deltaAngle;
+                    } else if (activeAxis === 'z') {
+                        selectedObject.rotation.z = objectStartRotation.z + deltaAngle;
+                    }
+                    
+                } else if (activeGizmo === 'scale') {
+                    const startDist = dragStart.distanceTo(selectedObject.position);
+                    const currentDist = dragCurrent.distanceTo(selectedObject.position);
+                    const scaleFactor = currentDist / startDist;
+                    
+                    if (activeAxis === 'x') {
+                        selectedObject.scale.x = Math.max(0.1, objectStartScale.x * scaleFactor);
+                    } else if (activeAxis === 'y') {
+                        selectedObject.scale.y = Math.max(0.1, objectStartScale.y * scaleFactor);
+                    } else if (activeAxis === 'z') {
+                        selectedObject.scale.z = Math.max(0.1, objectStartScale.z * scaleFactor);
+                    }
+                    
+                    updateGizmoVisibility();
+                }
+            }
+            
+            previousMousePosition = { x: e.clientX, y: e.clientY };
+        });
+        
+        threeCanvas.addEventListener('mouseup', () => {
+            isDraggingGizmo = false;
+            isOrbiting = false;
+            isPanning = false;
+            activeGizmo = null;
+            activeAxis = null;
+        });
+        
+        threeCanvas.addEventListener('wheel', (e) => {
+            e.preventDefault();
+            
+            const zoomSpeed = 0.5;
+            const newDistance = cameraDistance + (e.deltaY > 0 ? zoomSpeed : -zoomSpeed);
+            
+            if (newDistance > 1 && newDistance < 100) {
+                cameraDistance = newDistance;
+                updateCameraPosition();
+            }
+        }, { passive: false });
+        
+        threeCanvas.addEventListener('contextmenu', (e) => {
+            e.preventDefault();
+        });
+        
+        // Close modals on click outside
+        window.addEventListener('click', (e) => {
+            if (e.target === document.getElementById('renameModal')) {
+                document.getElementById('renameModal').style.display = 'none';
+            }
+            if (e.target === document.getElementById('exportModal')) {
+                document.getElementById('exportModal').style.display = 'none';
+            }
+        });
+        
+        updateObjectList();
+        
+        function animate() {
+            requestAnimationFrame(animate);
+            renderer.render(scene, camera);
+        }
+        animate();
+        
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+    </script>
+</body>
+</html>
