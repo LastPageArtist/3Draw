@@ -2,19 +2,21 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
     <title>3D Drawing App</title>
     <style>
         * {
             margin: 0;
             padding: 0;
             box-sizing: border-box;
+            -webkit-tap-highlight-color: transparent;
         }
         body {
             font-family: Arial, sans-serif;
             overflow: hidden;
             background: white;
             color: black;
+            touch-action: none;
         }
         #container {
             width: 100vw;
@@ -25,15 +27,16 @@
             width: 100%;
             height: 100%;
             display: block;
+            touch-action: none;
         }
         
         #floatingPanel {
             position: absolute;
-            top: 20px;
-            left: 20px;
+            top: 10px;
+            left: 10px;
             background: white;
             border: 2px solid black;
-            width: 280px;
+            width: min(280px, calc(100vw - 20px));
             box-shadow: 4px 4px 0 rgba(0,0,0,0.2);
             z-index: 1000;
         }
@@ -42,6 +45,7 @@
             color: white;
             padding: 8px 12px;
             cursor: move;
+            touch-action: none;
             display: flex;
             justify-content: space-between;
             align-items: center;
@@ -78,9 +82,16 @@
             background: white;
             border: 2px solid black;
             cursor: crosshair;
+            touch-action: none;
         }
         #drawCanvas.eraser {
             cursor: cell;
+        }
+        #drawCanvas.line {
+            cursor: crosshair;
+        }
+        #drawCanvas.circle {
+            cursor: crosshair;
         }
         
         button {
@@ -91,6 +102,7 @@
             cursor: pointer;
             font-size: 12px;
             font-weight: bold;
+            touch-action: manipulation;
         }
         button:hover {
             background: #f0f0f0;
@@ -125,6 +137,12 @@
         .button-group {
             display: grid;
             grid-template-columns: 1fr 1fr;
+            gap: 4px;
+        }
+        
+        .button-group-three {
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
             gap: 4px;
         }
         
@@ -245,7 +263,7 @@
             border: 2px solid black;
             margin: 15% auto;
             padding: 20px;
-            width: 300px;
+            width: min(300px, calc(100vw - 40px));
             box-shadow: 4px 4px 0 rgba(0,0,0,0.3);
         }
         
@@ -305,6 +323,11 @@
                 <div class="button-group">
                     <button id="brushBtn" class="active">BRUSH</button>
                     <button id="eraserBtn">ERASER</button>
+                </div>
+                
+                <div class="button-group">
+                    <button id="lineBtn">LINE</button>
+                    <button id="circleBtn">CIRCLE</button>
                 </div>
                 
                 <div class="control-group">
@@ -374,13 +397,14 @@
                 </div>
                 
                 <div class="info-text">
-                    <strong>CONTROLS:</strong><br>
-                    • Draw and project to 3D<br>
-                    • Click objects to select<br>
-                    • Middle-drag: orbit camera<br>
-                    • Right-drag: pan camera<br>
-                    • Scroll: zoom camera<br>
-                    • Use gizmos to transform
+                    <strong>DESKTOP:</strong><br>
+                    • Middle-drag: orbit<br>
+                    • Right-drag: pan<br>
+                    • Scroll: zoom<br>
+                    <strong>MOBILE:</strong><br>
+                    • 1 finger: rotate<br>
+                    • 2 fingers pinch: zoom<br>
+                    • 2 fingers drag: pan
                 </div>
             </div>
         </div>
@@ -438,20 +462,41 @@
         let isDrawing = false;
         let currentColor = '#ff0000';
         let brushSize = 3;
+        let lineStartX, lineStartY;
+        let circleStartX, circleStartY;
+        let tempCanvas = document.createElement('canvas');
+        let tempCtx = tempCanvas.getContext('2d');
+        tempCanvas.width = drawCanvas.width;
+        tempCanvas.height = drawCanvas.height;
         
-        document.getElementById('brushBtn').addEventListener('click', () => {
-            currentTool = 'brush';
-            document.getElementById('brushBtn').classList.add('active');
-            document.getElementById('eraserBtn').classList.remove('active');
-            drawCanvas.classList.remove('eraser');
-        });
-        
-        document.getElementById('eraserBtn').addEventListener('click', () => {
-            currentTool = 'eraser';
-            document.getElementById('eraserBtn').classList.add('active');
+        // Tool selection
+        function setTool(tool) {
+            currentTool = tool;
             document.getElementById('brushBtn').classList.remove('active');
-            drawCanvas.classList.add('eraser');
-        });
+            document.getElementById('eraserBtn').classList.remove('active');
+            document.getElementById('lineBtn').classList.remove('active');
+            document.getElementById('circleBtn').classList.remove('active');
+            
+            drawCanvas.classList.remove('eraser', 'line', 'circle');
+            
+            if (tool === 'brush') {
+                document.getElementById('brushBtn').classList.add('active');
+            } else if (tool === 'eraser') {
+                document.getElementById('eraserBtn').classList.add('active');
+                drawCanvas.classList.add('eraser');
+            } else if (tool === 'line') {
+                document.getElementById('lineBtn').classList.add('active');
+                drawCanvas.classList.add('line');
+            } else if (tool === 'circle') {
+                document.getElementById('circleBtn').classList.add('active');
+                drawCanvas.classList.add('circle');
+            }
+        }
+        
+        document.getElementById('brushBtn').addEventListener('click', () => setTool('brush'));
+        document.getElementById('eraserBtn').addEventListener('click', () => setTool('eraser'));
+        document.getElementById('lineBtn').addEventListener('click', () => setTool('line'));
+        document.getElementById('circleBtn').addEventListener('click', () => setTool('circle'));
         
         document.getElementById('colorPicker').addEventListener('input', (e) => {
             currentColor = e.target.value;
@@ -462,42 +507,107 @@
             document.getElementById('brushValue').textContent = brushSize;
         });
         
-        drawCanvas.addEventListener('mousedown', (e) => {
-            isDrawing = true;
-            const rect = drawCanvas.getBoundingClientRect();
-            const x = (e.clientX - rect.left) * (drawCanvas.width / rect.width);
-            const y = (e.clientY - rect.top) * (drawCanvas.height / rect.height);
-            ctx.beginPath();
-            ctx.moveTo(x, y);
+        function getCanvasCoords(e, canvas) {
+            const rect = canvas.getBoundingClientRect();
+            let clientX, clientY;
             
-            if (currentTool === 'eraser') {
-                ctx.globalCompositeOperation = 'destination-out';
+            if (e.touches && e.touches.length > 0) {
+                clientX = e.touches[0].clientX;
+                clientY = e.touches[0].clientY;
             } else {
-                ctx.globalCompositeOperation = 'source-over';
+                clientX = e.clientX;
+                clientY = e.clientY;
             }
-        });
+            
+            const x = (clientX - rect.left) * (canvas.width / rect.width);
+            const y = (clientY - rect.top) * (canvas.height / rect.height);
+            return { x, y };
+        }
         
-        drawCanvas.addEventListener('mousemove', (e) => {
+        function startDrawing(e) {
+            e.preventDefault();
+            isDrawing = true;
+            const coords = getCanvasCoords(e, drawCanvas);
+            
+            if (currentTool === 'brush' || currentTool === 'eraser') {
+                ctx.beginPath();
+                ctx.moveTo(coords.x, coords.y);
+                
+                if (currentTool === 'eraser') {
+                    ctx.globalCompositeOperation = 'destination-out';
+                } else {
+                    ctx.globalCompositeOperation = 'source-over';
+                }
+            } else if (currentTool === 'line') {
+                lineStartX = coords.x;
+                lineStartY = coords.y;
+                tempCtx.clearRect(0, 0, tempCanvas.width, tempCanvas.height);
+                tempCtx.drawImage(drawCanvas, 0, 0);
+            } else if (currentTool === 'circle') {
+                circleStartX = coords.x;
+                circleStartY = coords.y;
+                tempCtx.clearRect(0, 0, tempCanvas.width, tempCanvas.height);
+                tempCtx.drawImage(drawCanvas, 0, 0);
+            }
+        }
+        
+        function draw(e) {
             if (!isDrawing) return;
-            const rect = drawCanvas.getBoundingClientRect();
-            const x = (e.clientX - rect.left) * (drawCanvas.width / rect.width);
-            const y = (e.clientY - rect.top) * (drawCanvas.height / rect.height);
-            ctx.lineTo(x, y);
-            ctx.strokeStyle = currentTool === 'eraser' ? 'rgba(0,0,0,1)' : currentColor;
-            ctx.lineWidth = brushSize;
-            ctx.lineCap = 'round';
-            ctx.stroke();
-        });
+            e.preventDefault();
+            
+            const coords = getCanvasCoords(e, drawCanvas);
+            
+            if (currentTool === 'brush' || currentTool === 'eraser') {
+                ctx.lineTo(coords.x, coords.y);
+                ctx.strokeStyle = currentTool === 'eraser' ? 'rgba(0,0,0,1)' : currentColor;
+                ctx.lineWidth = brushSize;
+                ctx.lineCap = 'round';
+                ctx.stroke();
+            } else if (currentTool === 'line') {
+                ctx.clearRect(0, 0, drawCanvas.width, drawCanvas.height);
+                ctx.drawImage(tempCanvas, 0, 0);
+                
+                ctx.beginPath();
+                ctx.moveTo(lineStartX, lineStartY);
+                ctx.lineTo(coords.x, coords.y);
+                ctx.strokeStyle = currentColor;
+                ctx.lineWidth = brushSize;
+                ctx.lineCap = 'round';
+                ctx.stroke();
+            } else if (currentTool === 'circle') {
+                const radius = Math.sqrt(
+                    Math.pow(coords.x - circleStartX, 2) + 
+                    Math.pow(coords.y - circleStartY, 2)
+                );
+                
+                ctx.clearRect(0, 0, drawCanvas.width, drawCanvas.height);
+                ctx.drawImage(tempCanvas, 0, 0);
+                
+                ctx.beginPath();
+                ctx.arc(circleStartX, circleStartY, radius, 0, Math.PI * 2);
+                ctx.strokeStyle = currentColor;
+                ctx.lineWidth = brushSize;
+                ctx.stroke();
+            }
+        }
         
-        drawCanvas.addEventListener('mouseup', () => {
+        function stopDrawing(e) {
+            if (!isDrawing) return;
             isDrawing = false;
             ctx.globalCompositeOperation = 'source-over';
-        });
+        }
         
-        drawCanvas.addEventListener('mouseleave', () => {
-            isDrawing = false;
-            ctx.globalCompositeOperation = 'source-over';
-        });
+        // Mouse events
+        drawCanvas.addEventListener('mousedown', startDrawing);
+        drawCanvas.addEventListener('mousemove', draw);
+        drawCanvas.addEventListener('mouseup', stopDrawing);
+        drawCanvas.addEventListener('mouseleave', stopDrawing);
+        
+        // Touch events for drawing canvas
+        drawCanvas.addEventListener('touchstart', startDrawing, { passive: false });
+        drawCanvas.addEventListener('touchmove', draw, { passive: false });
+        drawCanvas.addEventListener('touchend', stopDrawing, { passive: false });
+        drawCanvas.addEventListener('touchcancel', stopDrawing, { passive: false });
         
         document.getElementById('clearBtn').addEventListener('click', () => {
             ctx.clearRect(0, 0, drawCanvas.width, drawCanvas.height);
@@ -514,22 +624,39 @@
         let isDraggingPanel = false;
         let panelOffset = { x: 0, y: 0 };
         
-        header.addEventListener('mousedown', (e) => {
+        function startPanelDrag(e) {
             if (e.target === document.getElementById('collapseBtn')) return;
             isDraggingPanel = true;
-            panelOffset.x = e.clientX - panel.offsetLeft;
-            panelOffset.y = e.clientY - panel.offsetTop;
-        });
+            
+            const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+            const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+            
+            panelOffset.x = clientX - panel.offsetLeft;
+            panelOffset.y = clientY - panel.offsetTop;
+        }
         
-        document.addEventListener('mousemove', (e) => {
+        function doPanelDrag(e) {
             if (!isDraggingPanel) return;
-            panel.style.left = (e.clientX - panelOffset.x) + 'px';
-            panel.style.top = (e.clientY - panelOffset.y) + 'px';
-        });
+            
+            const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+            const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+            
+            panel.style.left = (clientX - panelOffset.x) + 'px';
+            panel.style.top = (clientY - panelOffset.y) + 'px';
+        }
         
-        document.addEventListener('mouseup', () => {
+        function stopPanelDrag() {
             isDraggingPanel = false;
-        });
+        }
+        
+        header.addEventListener('mousedown', startPanelDrag);
+        header.addEventListener('touchstart', startPanelDrag, { passive: true });
+        
+        document.addEventListener('mousemove', doPanelDrag);
+        document.addEventListener('touchmove', doPanelDrag, { passive: true });
+        
+        document.addEventListener('mouseup', stopPanelDrag);
+        document.addEventListener('touchend', stopPanelDrag);
         
         document.getElementById('collapseBtn').addEventListener('click', () => {
             const content = document.getElementById('panelContent');
@@ -570,12 +697,7 @@
         let selectedObject = null;
         let objectCounter = 0;
         
-        // Camera controls with fixed panning
-        let isOrbiting = false;
-        let isPanning = false;
-        let previousMousePosition = { x: 0, y: 0 };
-        const orbitSpeed = 0.005;
-        const panSpeed = 0.01;
+        // Camera controls
         let cameraDistance = Math.sqrt(camera.position.x ** 2 + camera.position.y ** 2 + camera.position.z ** 2);
         let theta = Math.atan2(camera.position.x, camera.position.z);
         let phi = Math.acos(camera.position.y / cameraDistance);
@@ -588,7 +710,7 @@
             camera.lookAt(lookAtTarget);
         }
         
-        // Gizmos - Improved Implementation
+        // Gizmos
         const gizmos = {
             translate: null,
             rotate: null,
@@ -600,105 +722,6 @@
             const arrowLength = 1.5;
             const arrowHeadLength = 0.3;
             const arrowHeadWidth = 0.15;
-            
-            // X axis (red)
-            const xGeo = new THREE.CylinderGeometry(0.03, 0.03, arrowLength, 8);
-            const xMat = new THREE.MeshBasicMaterial({ color: 0xff0000 });
-            const xArrow = new THREE.Mesh(xGeo, xMat);
-            xArrow.rotation.z = -Math.PI / 2;
-            xArrow.position.x = arrowLength / 2;
-            xArrow.userData.axis = 'x';
-            xArrow.userData.gizmoType = 'translate';
-            
-            const xHeadGeo = new THREE.ConeGeometry(arrowHeadWidth, arrowHeadLength, 8);
-            const xHead = new THREE.Mesh(xHeadGeo, xMat);
-            xHead.rotation.z = -Math.PI / 2;
-            xHead.position.x = arrowLength;
-            xHead.userData.axis = 'x';
-            xHead.userData.gizmoType = 'translate';
-            
-            group.add(xArrow);
-            group.add(xHead);
-            
-            // Y axis (green)
-            const yGeo = new THREE.CylinderGeometry(0.03, 0.03, arrowLength, 8);
-            const yMat = new THREE.MeshBasicMaterial({ color: 0x00ff00 });
-            const yArrow = new THREE.Mesh(yGeo, yMat);
-            yArrow.position.y = arrowLength / 2;
-            yArrow.userData.axis = 'y';
-            yArrow.userData.gizmoType = 'translate';
-            
-            const yHeadGeo = new THREE.ConeGeometry(arrowHeadWidth, arrowHeadLength, 8);
-            const yHead = new THREE.Mesh(yHeadGeo, yMat);
-            yHead.position.y = arrowLength;
-            yHead.userData.axis = 'y';
-            yHead.userData.gizmoType = 'translate';
-            
-            group.add(yArrow);
-            group.add(yHead);
-            
-            // Z axis (blue)
-            const zGeo = new THREE.CylinderGeometry(0.03, 0.03, arrowLength, 8);
-            const zMat = new THREE.MeshBasicMaterial({ color: 0x0000ff });
-            const zArrow = new THREE.Mesh(zGeo, zMat);
-            zArrow.rotation.x = Math.PI / 2;
-            zArrow.position.z = arrowLength / 2;
-            zArrow.userData.axis = 'z';
-            zArrow.userData.gizmoType = 'translate';
-            
-            const zHeadGeo = new THREE.ConeGeometry(arrowHeadWidth, arrowHeadLength, 8);
-            const zHead = new THREE.Mesh(zHeadGeo, zMat);
-            zHead.rotation.x = Math.PI / 2;
-            zHead.position.z = arrowLength;
-            zHead.userData.axis = 'z';
-            zHead.userData.gizmoType = 'translate';
-            
-            group.add(zArrow);
-            group.add(zHead);
-            
-            group.visible = false;
-            return group;
-        }
-        
-        function createRotateGizmo() {
-            const group = new THREE.Group();
-            const radius = 1.5;
-            const segments = 64;
-            
-            // X axis (red)
-            const xGeo = new THREE.TorusGeometry(radius, 0.03, 16, segments);
-            const xMat = new THREE.MeshBasicMaterial({ color: 0xff0000 });
-            const xTorus = new THREE.Mesh(xGeo, xMat);
-            xTorus.rotation.y = Math.PI / 2;
-            xTorus.userData.axis = 'x';
-            xTorus.userData.gizmoType = 'rotate';
-            group.add(xTorus);
-            
-            // Y axis (green)
-            const yGeo = new THREE.TorusGeometry(radius, 0.03, 16, segments);
-            const yMat = new THREE.MeshBasicMaterial({ color: 0x00ff00 });
-            const yTorus = new THREE.Mesh(yGeo, yMat);
-            yTorus.rotation.x = Math.PI / 2;
-            yTorus.userData.axis = 'y';
-            yTorus.userData.gizmoType = 'rotate';
-            group.add(yTorus);
-            
-            // Z axis (blue)
-            const zGeo = new THREE.TorusGeometry(radius, 0.03, 16, segments);
-            const zMat = new THREE.MeshBasicMaterial({ color: 0x0000ff });
-            const zTorus = new THREE.Mesh(zGeo, zMat);
-            zTorus.userData.axis = 'z';
-            zTorus.userData.gizmoType = 'rotate';
-            group.add(zTorus);
-            
-            group.visible = false;
-            return group;
-        }
-        
-        function createScaleGizmo() {
-            const group = new THREE.Group();
-            const arrowLength = 1.5;
-            const cubeSize = 0.15;
             
             // X axis (red)
             const xGeo = new THREE.CylinderGeometry(0.03, 0.03, arrowLength, 8);
@@ -839,7 +862,6 @@
             const colors = [];
             const sphereRadius = 0.08;
             
-            // Choose geometry based on type
             const sphereGeo = geometryType === 'individual' 
                 ? new THREE.IcosahedronGeometry(sphereRadius, 1)
                 : new THREE.SphereGeometry(sphereRadius, 8, 8);
@@ -1068,7 +1090,6 @@
             let geometry;
             
             if (selectedObject.userData.isVolume && selectedObject.userData.sphereData) {
-                // Recreate geometry with selected type
                 const spheres = selectedObject.userData.sphereData;
                 geometry = new THREE.BufferGeometry();
                 const vertices = [];
@@ -1112,7 +1133,6 @@
             let objContent = '# Exported from 3D Drawing App\n';
             objContent += `o ${filename}\n`;
             
-            // Vertices
             for (let i = 0; i < positions.length; i += 3) {
                 const r = colors ? colors[i] : 1;
                 const g = colors ? colors[i + 1] : 1;
@@ -1120,7 +1140,6 @@
                 objContent += `v ${positions[i]} ${positions[i + 1]} ${positions[i + 2]} ${r} ${g} ${b}\n`;
             }
             
-            // Faces
             const numVertices = positions.length / 3;
             for (let i = 0; i < numVertices; i += 3) {
                 objContent += `f ${i + 1} ${i + 2} ${i + 3}\n`;
@@ -1150,7 +1169,6 @@
             plyContent += 'property list uchar int vertex_indices\n';
             plyContent += 'end_header\n';
             
-            // Vertices
             for (let i = 0; i < positions.length; i += 3) {
                 plyContent += `${positions[i]} ${positions[i + 1]} ${positions[i + 2]}`;
                 if (colors) {
@@ -1162,7 +1180,6 @@
                 plyContent += '\n';
             }
             
-            // Faces
             for (let i = 0; i < numVertices; i += 3) {
                 plyContent += `3 ${i} ${i + 1} ${i + 2}\n`;
             }
@@ -1182,7 +1199,25 @@
             URL.revokeObjectURL(url);
         }
         
-        // Mouse interaction - IMPROVED GIZMO HANDLING
+        // TOUCH CONTROLS FOR 3D CANVAS
+        let touches = [];
+        let lastPinchDistance = 0;
+        let lastTouchCenter = { x: 0, y: 0 };
+        
+        function getTouchDistance(touch1, touch2) {
+            const dx = touch2.clientX - touch1.clientX;
+            const dy = touch2.clientY - touch1.clientY;
+            return Math.sqrt(dx * dx + dy * dy);
+        }
+        
+        function getTouchCenter(touch1, touch2) {
+            return {
+                x: (touch1.clientX + touch2.clientX) / 2,
+                y: (touch1.clientY + touch2.clientY) / 2
+            };
+        }
+        
+        // Mouse/Touch interaction
         const raycaster = new THREE.Raycaster();
         const mouse = new THREE.Vector2();
         let isDraggingGizmo = false;
@@ -1195,11 +1230,26 @@
         let objectStartRotation = new THREE.Euler();
         let objectStartScale = new THREE.Vector3();
         let initialMouseAngle = 0;
+        let isOrbiting = false;
+        let isPanning = false;
+        let previousMousePosition = { x: 0, y: 0 };
+        const orbitSpeed = 0.005;
+        const panSpeed = 0.01;
         
         function getMousePosition(e) {
             const rect = threeCanvas.getBoundingClientRect();
-            mouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
-            mouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+            let clientX, clientY;
+            
+            if (e.touches && e.touches.length > 0) {
+                clientX = e.touches[0].clientX;
+                clientY = e.touches[0].clientY;
+            } else {
+                clientX = e.clientX;
+                clientY = e.clientY;
+            }
+            
+            mouse.x = ((clientX - rect.left) / rect.width) * 2 - 1;
+            mouse.y = -((clientY - rect.top) / rect.height) * 2 + 1;
         }
         
         function getGizmoObjects() {
@@ -1222,6 +1272,363 @@
             return gizmoObjects;
         }
         
+        // Touch start
+        threeCanvas.addEventListener('touchstart', (e) => {
+            if (isDraggingPanel) return;
+            
+            touches = Array.from(e.touches);
+            
+            if (touches.length === 1) {
+                // Single touch - orbit or gizmo interaction
+                getMousePosition(e);
+                raycaster.setFromCamera(mouse, camera);
+                
+                const gizmoObjects = getGizmoObjects();
+                const gizmoIntersects = raycaster.intersectObjects(gizmoObjects, false);
+                
+                if (gizmoIntersects.length > 0 && selectedObject) {
+                    isDraggingGizmo = true;
+                    const intersectedObj = gizmoIntersects[0].object;
+                    activeAxis = intersectedObj.userData.axis;
+                    activeGizmo = intersectedObj.userData.gizmoType;
+                    
+                    const cameraDir = new THREE.Vector3();
+                    camera.getWorldDirection(cameraDir);
+                    
+                    if (activeGizmo === 'translate') {
+                        if (activeAxis === 'x') {
+                            const normal = new THREE.Vector3(0, 0, 1).cross(new THREE.Vector3(1, 0, 0));
+                            if (normal.length() < 0.1) normal.set(0, 1, 0);
+                            normal.normalize();
+                            dragPlane.setFromNormalAndCoplanarPoint(normal, selectedObject.position);
+                        } else if (activeAxis === 'y') {
+                            const normal = new THREE.Vector3(1, 0, 0).cross(new THREE.Vector3(0, 1, 0));
+                            if (normal.length() < 0.1) normal.set(0, 0, 1);
+                            normal.normalize();
+                            dragPlane.setFromNormalAndCoplanarPoint(normal, selectedObject.position);
+                        } else if (activeAxis === 'z') {
+                            const normal = new THREE.Vector3(0, 1, 0).cross(new THREE.Vector3(0, 0, 1));
+                            if (normal.length() < 0.1) normal.set(1, 0, 0);
+                            normal.normalize();
+                            dragPlane.setFromNormalAndCoplanarPoint(normal, selectedObject.position);
+                        }
+                    } else {
+                        dragPlane.setFromNormalAndCoplanarPoint(cameraDir.negate(), selectedObject.position);
+                    }
+                    
+                    raycaster.ray.intersectPlane(dragPlane, dragStart);
+                    objectStartPosition.copy(selectedObject.position);
+                    objectStartRotation.copy(selectedObject.rotation);
+                    objectStartScale.copy(selectedObject.scale);
+                    
+                    if (activeGizmo === 'rotate') {
+                        const offset = dragStart.clone().sub(selectedObject.position);
+                        initialMouseAngle = Math.atan2(offset.y, offset.x);
+                    }
+                } else {
+                    // Check object selection
+                    const intersects = raycaster.intersectObjects(objects);
+                    
+                    if (intersects.length > 0) {
+                        selectObject(intersects[0].object);
+                    } else {
+                        isOrbiting = true;
+                    }
+                }
+                
+                previousMousePosition = { x: touches[0].clientX, y: touches[0].clientY };
+                
+            } else if (touches.length === 2) {
+                // Two finger - pinch to zoom and pan
+                lastPinchDistance = getTouchDistance(touches[0], touches[1]);
+                lastTouchCenter = getTouchCenter(touches[0], touches[1]);
+                isPanning = true;
+            }
+            
+            e.preventDefault();
+        }, { passive: false });
+        
+        // Touch move
+        threeCanvas.addEventListener('touchmove', (e) => {
+            if (isDraggingPanel) return;
+            
+            touches = Array.from(e.touches);
+            
+            if (touches.length === 1 && (isOrbiting || isDraggingGizmo)) {
+                getMousePosition(e);
+                
+                if (isDraggingGizmo && selectedObject) {
+                    raycaster.setFromCamera(mouse, camera);
+                    raycaster.ray.intersectPlane(dragPlane, dragCurrent);
+                    
+                    if (activeGizmo === 'translate') {
+                        const delta = dragCurrent.clone().sub(dragStart);
+                        
+                        if (activeAxis === 'x') {
+                            selectedObject.position.x = objectStartPosition.x + delta.x;
+                        } else if (activeAxis === 'y') {
+                            selectedObject.position.y = objectStartPosition.y + delta.y;
+                        } else if (activeAxis === 'z') {
+                            selectedObject.position.z = objectStartPosition.z + delta.z;
+                        }
+                        
+                        updateGizmoVisibility();
+                        
+                    } else if (activeGizmo === 'rotate') {
+                        const offset = dragCurrent.clone().sub(selectedObject.position);
+                        const currentAngle = Math.atan2(offset.y, offset.x);
+                        const deltaAngle = currentAngle - initialMouseAngle;
+                        
+                        if (activeAxis === 'x') {
+                            selectedObject.rotation.x = objectStartRotation.x + deltaAngle;
+                        } else if (activeAxis === 'y') {
+                            selectedObject.rotation.y = objectStartRotation.y + deltaAngle;
+                        } else if (activeAxis === 'z') {
+                            selectedObject.rotation.z = objectStartRotation.z + deltaAngle;
+                        }
+                        
+                    } else if (activeGizmo === 'scale') {
+                        const startDist = dragStart.distanceTo(selectedObject.position);
+                        const currentDist = dragCurrent.distanceTo(selectedObject.position);
+                        const scaleFactor = currentDist / startDist;
+                        
+                        if (activeAxis === 'x') {
+                            selectedObject.scale.x = Math.max(0.1, objectStartScale.x * scaleFactor);
+                        } else if (activeAxis === 'y') {
+                            selectedObject.scale.y = Math.max(0.1, objectStartScale.y * scaleFactor);
+                        } else if (activeAxis === 'z') {
+                            selectedObject.scale.z = Math.max(0.1, objectStartScale.z * scaleFactor);
+                        }
+                        
+                        updateGizmoVisibility();
+                    }
+                } else if (isOrbiting) {
+                    const deltaX = touches[0].clientX - previousMousePosition.x;
+                    const deltaY = touches[0].clientY - previousMousePosition.y;
+                    
+                    theta -= deltaX * orbitSpeed;
+                    phi -= deltaY * orbitSpeed;
+                    phi = Math.max(0.1, Math.min(Math.PI - 0.1, phi));
+                    
+                    updateCameraPosition();
+                }
+                
+                previousMousePosition = { x: touches[0].clientX, y: touches[0].clientY };
+                
+            } else if (touches.length === 2) {
+                const currentPinchDistance = getTouchDistance(touches[0], touches[1]);
+                const currentTouchCenter = getTouchCenter(touches[0], touches[1]);
+                
+                // Pinch to zoom
+                const pinchDelta = currentPinchDistance - lastPinchDistance;
+                const zoomSpeed = 0.01;
+                const newDistance = cameraDistance - pinchDelta * zoomSpeed;
+                
+                if (newDistance > 1 && newDistance < 100) {
+                    cameraDistance = newDistance;
+                }
+                
+                // Pan
+                if (isPanning) {
+                    const deltaX = currentTouchCenter.x - lastTouchCenter.x;
+                    const deltaY = currentTouchCenter.y - lastTouchCenter.y;
+                    
+                    const distance = camera.position.distanceTo(lookAtTarget);
+                    const panScale = distance * panSpeed;
+                    
+                    const cameraRight = new THREE.Vector3();
+                    camera.getWorldDirection(cameraRight);
+                    cameraRight.cross(new THREE.Vector3(0, 1, 0)).normalize();
+                    
+                    const cameraUp = new THREE.Vector3();
+                    cameraUp.crossVectors(cameraRight, camera.getWorldDirection(new THREE.Vector3())).normalize();
+                    
+                    lookAtTarget.add(cameraRight.multiplyScalar(-deltaX * panScale));
+                    lookAtTarget.add(cameraUp.multiplyScalar(deltaY * panScale));
+                    
+                    updateCameraPosition();
+                }
+                
+                lastPinchDistance = currentPinchDistance;
+                lastTouchCenter = currentTouchCenter;
+                
+                updateCameraPosition();
+            }
+            
+            e.preventDefault();
+        }, { passive: false });
+        
+        function createTranslateGizmo() {
+            const group = new THREE.Group();
+            const arrowLength = 1.5;
+            const arrowHeadLength = 0.3;
+            const arrowHeadWidth = 0.15;
+            
+            // X axis (red)
+            const xGeo = new THREE.CylinderGeometry(0.03, 0.03, arrowLength, 8);
+            const xMat = new THREE.MeshBasicMaterial({ color: 0xff0000 });
+            const xArrow = new THREE.Mesh(xGeo, xMat);
+            xArrow.rotation.z = -Math.PI / 2;
+            xArrow.position.x = arrowLength / 2;
+            xArrow.userData.axis = 'x';
+            xArrow.userData.gizmoType = 'translate';
+            
+            const xHeadGeo = new THREE.ConeGeometry(arrowHeadWidth, arrowHeadLength, 8);
+            const xHead = new THREE.Mesh(xHeadGeo, xMat);
+            xHead.rotation.z = -Math.PI / 2;
+            xHead.position.x = arrowLength;
+            xHead.userData.axis = 'x';
+            xHead.userData.gizmoType = 'translate';
+            
+            group.add(xArrow);
+            group.add(xHead);
+            
+            // Y axis (green)
+            const yGeo = new THREE.CylinderGeometry(0.03, 0.03, arrowLength, 8);
+            const yMat = new THREE.MeshBasicMaterial({ color: 0x00ff00 });
+            const yArrow = new THREE.Mesh(yGeo, yMat);
+            yArrow.position.y = arrowLength / 2;
+            yArrow.userData.axis = 'y';
+            yArrow.userData.gizmoType = 'translate';
+            
+            const yHeadGeo = new THREE.ConeGeometry(arrowHeadWidth, arrowHeadLength, 8);
+            const yHead = new THREE.Mesh(yHeadGeo, yMat);
+            yHead.position.y = arrowLength;
+            yHead.userData.axis = 'y';
+            yHead.userData.gizmoType = 'translate';
+            
+            group.add(yArrow);
+            group.add(yHead);
+            
+            // Z axis (blue)
+            const zGeo = new THREE.CylinderGeometry(0.03, 0.03, arrowLength, 8);
+            const zMat = new THREE.MeshBasicMaterial({ color: 0x0000ff });
+            const zArrow = new THREE.Mesh(zGeo, zMat);
+            zArrow.rotation.x = Math.PI / 2;
+            zArrow.position.z = arrowLength / 2;
+            zArrow.userData.axis = 'z';
+            zArrow.userData.gizmoType = 'translate';
+            
+            const zHeadGeo = new THREE.ConeGeometry(arrowHeadWidth, arrowHeadLength, 8);
+            const zHead = new THREE.Mesh(zHeadGeo, zMat);
+            zHead.rotation.x = Math.PI / 2;
+            zHead.position.z = arrowLength;
+            zHead.userData.axis = 'z';
+            zHead.userData.gizmoType = 'translate';
+            
+            group.add(zArrow);
+            group.add(zHead);
+            
+            group.visible = false;
+            return group;
+        }
+        
+        function createRotateGizmo() {
+            const group = new THREE.Group();
+            const radius = 1.5;
+            const segments = 64;
+            
+            // X axis (red)
+            const xGeo = new THREE.TorusGeometry(radius, 0.03, 16, segments);
+            const xMat = new THREE.MeshBasicMaterial({ color: 0xff0000 });
+            const xTorus = new THREE.Mesh(xGeo, xMat);
+            xTorus.rotation.y = Math.PI / 2;
+            xTorus.userData.axis = 'x';
+            xTorus.userData.gizmoType = 'rotate';
+            group.add(xTorus);
+            
+            // Y axis (green)
+            const yGeo = new THREE.TorusGeometry(radius, 0.03, 16, segments);
+            const yMat = new THREE.MeshBasicMaterial({ color: 0x00ff00 });
+            const yTorus = new THREE.Mesh(yGeo, yMat);
+            yTorus.rotation.x = Math.PI / 2;
+            yTorus.userData.axis = 'y';
+            yTorus.userData.gizmoType = 'rotate';
+            group.add(yTorus);
+            
+            // Z axis (blue)
+            const zGeo = new THREE.TorusGeometry(radius, 0.03, 16, segments);
+            const zMat = new THREE.MeshBasicMaterial({ color: 0x0000ff });
+            const zTorus = new THREE.Mesh(zGeo, zMat);
+            zTorus.userData.axis = 'z';
+            zTorus.userData.gizmoType = 'rotate';
+            group.add(zTorus);
+            
+            group.visible = false;
+            return group;
+        }
+        
+        function createScaleGizmo() {
+            const group = new THREE.Group();
+            const arrowLength = 1.5;
+            const cubeSize = 0.15;
+            
+            // X axis (red)
+            const xGeo = new THREE.CylinderGeometry(0.03, 0.03, arrowLength, 8);
+            const xMat = new THREE.MeshBasicMaterial({ color: 0xff0000 });
+            const xArrow = new THREE.Mesh(xGeo, xMat);
+            xArrow.rotation.z = -Math.PI / 2;
+            xArrow.position.x = arrowLength / 2;
+            xArrow.userData.axis = 'x';
+            xArrow.userData.gizmoType = 'scale';
+            
+            const xCubeGeo = new THREE.BoxGeometry(cubeSize, cubeSize, cubeSize);
+            const xCube = new THREE.Mesh(xCubeGeo, xMat);
+            xCube.position.x = arrowLength;
+            xCube.userData.axis = 'x';
+            xCube.userData.gizmoType = 'scale';
+            
+            group.add(xArrow);
+            group.add(xCube);
+            
+            // Y axis (green)
+            const yGeo = new THREE.CylinderGeometry(0.03, 0.03, arrowLength, 8);
+            const yMat = new THREE.MeshBasicMaterial({ color: 0x00ff00 });
+            const yArrow = new THREE.Mesh(yGeo, yMat);
+            yArrow.position.y = arrowLength / 2;
+            yArrow.userData.axis = 'y';
+            yArrow.userData.gizmoType = 'scale';
+            
+            const yCubeGeo = new THREE.BoxGeometry(cubeSize, cubeSize, cubeSize);
+            const yCube = new THREE.Mesh(yCubeGeo, yMat);
+            yCube.position.y = arrowLength;
+            yCube.userData.axis = 'y';
+            yCube.userData.gizmoType = 'scale';
+            
+            group.add(yArrow);
+            group.add(yCube);
+            
+            // Z axis (blue)
+            const zGeo = new THREE.CylinderGeometry(0.03, 0.03, arrowLength, 8);
+            const zMat = new THREE.MeshBasicMaterial({ color: 0x0000ff });
+            const zArrow = new THREE.Mesh(zGeo, zMat);
+            zArrow.rotation.x = Math.PI / 2;
+            zArrow.position.z = arrowLength / 2;
+            zArrow.userData.axis = 'z';
+            zArrow.userData.gizmoType = 'scale';
+            
+            const zCubeGeo = new THREE.BoxGeometry(cubeSize, cubeSize, cubeSize);
+            const zCube = new THREE.Mesh(zCubeGeo, zMat);
+            zCube.position.z = arrowLength;
+            zCube.userData.axis = 'z';
+            zCube.userData.gizmoType = 'scale';
+            
+            group.add(zArrow);
+            group.add(zCube);
+            
+            group.visible = false;
+            return group;
+        }
+        
+        gizmos.translate = createTranslateGizmo();
+        gizmos.rotate = createRotateGizmo();
+        gizmos.scale = createScaleGizmo();
+        
+        scene.add(gizmos.translate);
+        scene.add(gizmos.rotate);
+        scene.add(gizmos.scale);
+        
+        // Mouse controls
         threeCanvas.addEventListener('mousedown', (e) => {
             if (isDraggingPanel) return;
             
@@ -1242,7 +1649,6 @@
             if (e.button === 0) {
                 raycaster.setFromCamera(mouse, camera);
                 
-                // Check gizmo intersection first
                 const gizmoObjects = getGizmoObjects();
                 const gizmoIntersects = raycaster.intersectObjects(gizmoObjects, false);
                 
@@ -1252,12 +1658,10 @@
                     activeAxis = intersectedObj.userData.axis;
                     activeGizmo = intersectedObj.userData.gizmoType;
                     
-                    // Set up drag plane based on axis
                     const cameraDir = new THREE.Vector3();
                     camera.getWorldDirection(cameraDir);
                     
                     if (activeGizmo === 'translate') {
-                        // For translate, use a plane perpendicular to camera for the drag axis
                         if (activeAxis === 'x') {
                             const normal = new THREE.Vector3(0, 0, 1).cross(new THREE.Vector3(1, 0, 0));
                             if (normal.length() < 0.1) normal.set(0, 1, 0);
@@ -1275,7 +1679,6 @@
                             dragPlane.setFromNormalAndCoplanarPoint(normal, selectedObject.position);
                         }
                     } else {
-                        // For rotate and scale, use plane facing camera
                         dragPlane.setFromNormalAndCoplanarPoint(cameraDir.negate(), selectedObject.position);
                     }
                     
@@ -1284,7 +1687,6 @@
                     objectStartRotation.copy(selectedObject.rotation);
                     objectStartScale.copy(selectedObject.scale);
                     
-                    // Calculate initial angle for rotation
                     if (activeGizmo === 'rotate') {
                         const offset = dragStart.clone().sub(selectedObject.position);
                         initialMouseAngle = Math.atan2(offset.y, offset.x);
@@ -1292,7 +1694,6 @@
                     
                     e.preventDefault();
                 } else {
-                    // Check object intersection
                     const intersects = raycaster.intersectObjects(objects);
                     
                     if (intersects.length > 0) {
@@ -1411,6 +1812,30 @@
         threeCanvas.addEventListener('contextmenu', (e) => {
             e.preventDefault();
         });
+        
+        // Touch end
+        threeCanvas.addEventListener('touchend', (e) => {
+            touches = Array.from(e.touches);
+            
+            if (touches.length === 0) {
+                isDraggingGizmo = false;
+                isOrbiting = false;
+                isPanning = false;
+                activeGizmo = null;
+                activeAxis = null;
+            } else if (touches.length === 1) {
+                isPanning = false;
+                lastPinchDistance = 0;
+            }
+        }, { passive: false });
+        
+        threeCanvas.addEventListener('touchcancel', (e) => {
+            isDraggingGizmo = false;
+            isOrbiting = false;
+            isPanning = false;
+            activeGizmo = null;
+            activeAxis = null;
+        }, { passive: false });
         
         // Close modals on click outside
         window.addEventListener('click', (e) => {
