@@ -765,13 +765,20 @@
         camera.position.set(5, 5, 5);
         camera.lookAt(0, 0, 0);
         
-        const renderer = new THREE.WebGLRenderer({ canvas: threeCanvas, antialias: true });
+        // OPTIMIZATION: Use lower pixel ratio on low-end devices
+        const pixelRatio = Math.min(window.devicePixelRatio, 2);
+        const renderer = new THREE.WebGLRenderer({ 
+            canvas: threeCanvas, 
+            antialias: pixelRatio <= 1,
+            powerPreference: "high-performance"
+        });
+        renderer.setPixelRatio(pixelRatio);
         renderer.setSize(window.innerWidth, window.innerHeight);
         
-        // Lighting
-        const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+        // Lighting - optimized for performance
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.7);
         scene.add(ambientLight);
-        const directionalLight = new THREE.DirectionalLight(0xffffff, 0.4);
+        const directionalLight = new THREE.DirectionalLight(0xffffff, 0.3);
         directionalLight.position.set(5, 5, 5);
         scene.add(directionalLight);
         
@@ -781,6 +788,7 @@
         
         document.getElementById('gridToggle').addEventListener('change', (e) => {
             gridHelper.visible = e.target.checked;
+            requestRenderIfNeeded();
         });
         
         // Objects
@@ -799,6 +807,7 @@
             camera.position.y = lookAtTarget.y + cameraDistance * Math.cos(phi);
             camera.position.z = lookAtTarget.z + cameraDistance * Math.sin(phi) * Math.cos(theta);
             camera.lookAt(lookAtTarget);
+            requestRenderIfNeeded();
         }
         
         // Gizmos
@@ -1064,6 +1073,7 @@
                 gizmos.rotate.position.copy(selectedObject.position);
                 gizmos.scale.position.copy(selectedObject.position);
             }
+            requestRenderIfNeeded();
         }
         
         // Shared geometry cache for optimization
@@ -1072,7 +1082,13 @@
             icosahedron: new THREE.IcosahedronGeometry(0.08, 1)
         };
         
-        // Create volumetric mesh from drawing (optimized with instancing)
+        // OPTIMIZATION: Render on demand instead of continuous animation
+        let needsRender = true;
+        function requestRenderIfNeeded() {
+            needsRender = true;
+        }
+        
+        // Create volumetric mesh from drawing (optimized with merged geometry)
         function createVolumetricMesh(imageData, color, geometryType) {
             const spheres = [];
             const sampleStep = 2;
@@ -1104,7 +1120,7 @@
             
             if (spheres.length === 0) return null;
             
-            // Use merged geometry for better performance
+            // OPTIMIZATION: Use merged geometry for better performance
             const geometry = new THREE.BufferGeometry();
             const vertices = [];
             const colors = [];
@@ -1177,6 +1193,7 @@
             
             updateObjectList();
             selectObject(mesh);
+            requestRenderIfNeeded();
         });
         
         function updateObjectList() {
@@ -1248,6 +1265,7 @@
                 objects = objects.filter(obj => obj !== selectedObject);
                 deselectObject();
                 updateObjectList();
+                requestRenderIfNeeded();
             }
         });
         
@@ -1293,6 +1311,7 @@
             
             updateObjectList();
             selectObject(mesh);
+            requestRenderIfNeeded();
         });
         
         // Rename modal
@@ -1762,6 +1781,7 @@
                 
                 updateGizmoVisibility();
             }
+            requestRenderIfNeeded();
         }
         
         // Mouse controls
@@ -1919,9 +1939,15 @@
         
         updateObjectList();
         
+        // OPTIMIZATION: Render on demand instead of continuous loop
         function animate() {
             requestAnimationFrame(animate);
-            renderer.render(scene, camera);
+            
+            // Only render when something has changed
+            if (needsRender) {
+                renderer.render(scene, camera);
+                needsRender = false;
+            }
         }
         animate();
         
@@ -1929,6 +1955,7 @@
             camera.aspect = window.innerWidth / window.innerHeight;
             camera.updateProjectionMatrix();
             renderer.setSize(window.innerWidth, window.innerHeight);
+            requestRenderIfNeeded();
         });
     </script>
 </body>
