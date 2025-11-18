@@ -312,11 +312,25 @@
             gap: 6px;
             margin-top: 8px;
         }
+        
+        #fpsCounter {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            background: rgba(0,0,0,0.7);
+            color: #0f0;
+            padding: 8px 12px;
+            font-family: monospace;
+            font-size: 14px;
+            border-radius: 4px;
+            z-index: 999;
+        }
     </style>
 </head>
 <body>
     <div id="container">
         <canvas id="threeCanvas"></canvas>
+        <div id="fpsCounter">FPS: --</div>
         
         <div id="floatingPanel">
             <div id="panelHeader">
@@ -462,6 +476,22 @@
 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <script>
+        // FPS Counter
+        let frameCount = 0;
+        let lastTime = performance.now();
+        let fps = 0;
+        
+        function updateFPS() {
+            frameCount++;
+            const currentTime = performance.now();
+            if (currentTime >= lastTime + 1000) {
+                fps = Math.round((frameCount * 1000) / (currentTime - lastTime));
+                document.getElementById('fpsCounter').textContent = `FPS: ${fps}`;
+                frameCount = 0;
+                lastTime = currentTime;
+            }
+        }
+        
         // Drawing tool state
         let currentTool = 'brush';
         
@@ -756,7 +786,7 @@
             btn.textContent = content.classList.contains('collapsed') ? '+' : '−';
         });
         
-        // Three.js Scene
+        // Three.js Scene - OPTIMIZED FOR LOW-END DEVICES
         const threeCanvas = document.getElementById('threeCanvas');
         const scene = new THREE.Scene();
         scene.background = new THREE.Color(0xffffff);
@@ -765,18 +795,18 @@
         camera.position.set(5, 5, 5);
         camera.lookAt(0, 0, 0);
         
-        // OPTIMIZATION: Use lower pixel ratio on low-end devices
-        const pixelRatio = Math.min(window.devicePixelRatio, 2);
+        // Optimized renderer settings for performance
         const renderer = new THREE.WebGLRenderer({ 
             canvas: threeCanvas, 
-            antialias: pixelRatio <= 1,
-            powerPreference: "high-performance"
+            antialias: false, // Disabled for better performance
+            powerPreference: "high-performance",
+            precision: "lowp" // Lower precision for better performance
         });
-        renderer.setPixelRatio(pixelRatio);
         renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5)); // Limit pixel ratio
         
-        // Lighting - optimized for performance
-        const ambientLight = new THREE.AmbientLight(0xffffff, 0.7);
+        // Simplified lighting for better performance
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.8);
         scene.add(ambientLight);
         const directionalLight = new THREE.DirectionalLight(0xffffff, 0.3);
         directionalLight.position.set(5, 5, 5);
@@ -788,7 +818,6 @@
         
         document.getElementById('gridToggle').addEventListener('change', (e) => {
             gridHelper.visible = e.target.checked;
-            requestRenderIfNeeded();
         });
         
         // Objects
@@ -807,7 +836,6 @@
             camera.position.y = lookAtTarget.y + cameraDistance * Math.cos(phi);
             camera.position.z = lookAtTarget.z + cameraDistance * Math.sin(phi) * Math.cos(theta);
             camera.lookAt(lookAtTarget);
-            requestRenderIfNeeded();
         }
         
         // Gizmos
@@ -1073,25 +1101,18 @@
                 gizmos.rotate.position.copy(selectedObject.position);
                 gizmos.scale.position.copy(selectedObject.position);
             }
-            requestRenderIfNeeded();
         }
         
-        // Shared geometry cache for optimization
+        // Shared geometry cache for optimization - REDUCED DETAIL FOR PERFORMANCE
         const geometryCache = {
-            sphere: new THREE.SphereGeometry(0.08, 8, 8),
-            icosahedron: new THREE.IcosahedronGeometry(0.08, 1)
+            sphere: new THREE.SphereGeometry(0.08, 6, 6), // Reduced from 8,8 to 6,6
+            icosahedron: new THREE.IcosahedronGeometry(0.08, 0) // Reduced detail level to 0
         };
         
-        // OPTIMIZATION: Render on demand instead of continuous animation
-        let needsRender = true;
-        function requestRenderIfNeeded() {
-            needsRender = true;
-        }
-        
-        // Create volumetric mesh from drawing (optimized with merged geometry)
+        // OPTIMIZED: Create volumetric mesh using InstancedMesh for massive performance boost
         function createVolumetricMesh(imageData, color, geometryType) {
             const spheres = [];
-            const sampleStep = 2;
+            const sampleStep = 3; // Increased from 2 to 3 for fewer particles
             
             for (let y = 0; y < drawCanvas.height; y += sampleStep) {
                 for (let x = 0; x < drawCanvas.width; x += sampleStep) {
@@ -1120,38 +1141,34 @@
             
             if (spheres.length === 0) return null;
             
-            // OPTIMIZATION: Use merged geometry for better performance
-            const geometry = new THREE.BufferGeometry();
-            const vertices = [];
-            const colors = [];
-            
+            // Use InstancedMesh for MASSIVE performance improvement
             const baseGeo = geometryType === 'individual' ? geometryCache.icosahedron : geometryCache.sphere;
-            const spherePositions = baseGeo.attributes.position.array;
-            
-            spheres.forEach(sphere => {
-                for (let i = 0; i < spherePositions.length; i += 3) {
-                    vertices.push(
-                        spherePositions[i] + sphere.x,
-                        spherePositions[i + 1] + sphere.y,
-                        spherePositions[i + 2] + sphere.z
-                    );
-                    colors.push(sphere.r, sphere.g, sphere.b);
-                }
-            });
-            
-            geometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
-            geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
-            geometry.computeVertexNormals();
-            
             const material = new THREE.MeshLambertMaterial({
-                vertexColors: true,
+                vertexColors: false,
                 side: THREE.DoubleSide
             });
             
-            const mesh = new THREE.Mesh(geometry, material);
-            mesh.userData.sphereData = spheres;
-            mesh.userData.geometryType = geometryType;
-            return mesh;
+            const instancedMesh = new THREE.InstancedMesh(baseGeo, material, spheres.length);
+            instancedMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+            
+            const matrix = new THREE.Matrix4();
+            const color3 = new THREE.Color();
+            
+            spheres.forEach((sphere, i) => {
+                matrix.setPosition(sphere.x, sphere.y, sphere.z);
+                instancedMesh.setMatrixAt(i, matrix);
+                color3.setRGB(sphere.r, sphere.g, sphere.b);
+                instancedMesh.setColorAt(i, color3);
+            });
+            
+            instancedMesh.instanceMatrix.needsUpdate = true;
+            if (instancedMesh.instanceColor) instancedMesh.instanceColor.needsUpdate = true;
+            
+            instancedMesh.userData.sphereData = spheres;
+            instancedMesh.userData.geometryType = geometryType;
+            instancedMesh.userData.isInstanced = true;
+            
+            return instancedMesh;
         }
         
         // Project to 3D
@@ -1193,7 +1210,6 @@
             
             updateObjectList();
             selectObject(mesh);
-            requestRenderIfNeeded();
         });
         
         function updateObjectList() {
@@ -1265,19 +1281,48 @@
                 objects = objects.filter(obj => obj !== selectedObject);
                 deselectObject();
                 updateObjectList();
-                requestRenderIfNeeded();
             }
         });
         
-        // Duplicate object
+        // Duplicate object - OPTIMIZED FOR INSTANCED MESHES
         document.getElementById('duplicateBtn').addEventListener('click', () => {
             if (!selectedObject) return;
             
             const original = selectedObject;
             let mesh;
             
-            if (original.userData.isVolume && original.userData.sphereData) {
-                // Clone volumetric mesh
+            if (original.userData.isVolume && original.userData.sphereData && original.userData.isInstanced) {
+                // Clone instanced mesh efficiently
+                const baseGeo = original.userData.geometryType === 'individual' ? 
+                    geometryCache.icosahedron : geometryCache.sphere;
+                const material = original.material.clone();
+                
+                const spheres = original.userData.sphereData;
+                const instancedMesh = new THREE.InstancedMesh(baseGeo, material, spheres.length);
+                instancedMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+                
+                // Copy instance data
+                for (let i = 0; i < spheres.length; i++) {
+                    const matrix = new THREE.Matrix4();
+                    original.getMatrixAt(i, matrix);
+                    instancedMesh.setMatrixAt(i, matrix);
+                    
+                    const color = new THREE.Color();
+                    original.getColorAt(i, color);
+                    instancedMesh.setColorAt(i, color);
+                }
+                
+                instancedMesh.instanceMatrix.needsUpdate = true;
+                if (instancedMesh.instanceColor) instancedMesh.instanceColor.needsUpdate = true;
+                
+                instancedMesh.userData.sphereData = [...spheres];
+                instancedMesh.userData.geometryType = original.userData.geometryType;
+                instancedMesh.userData.isVolume = true;
+                instancedMesh.userData.isInstanced = true;
+                
+                mesh = instancedMesh;
+            } else if (original.userData.isVolume && original.userData.sphereData) {
+                // Handle old non-instanced volumetric meshes (shouldn't happen with new code)
                 const geometry = original.geometry.clone();
                 const material = original.material.clone();
                 mesh = new THREE.Mesh(geometry, material);
@@ -1311,7 +1356,6 @@
             
             updateObjectList();
             selectObject(mesh);
-            requestRenderIfNeeded();
         });
         
         // Rename modal
@@ -1781,7 +1825,6 @@
                 
                 updateGizmoVisibility();
             }
-            requestRenderIfNeeded();
         }
         
         // Mouse controls
@@ -1939,15 +1982,10 @@
         
         updateObjectList();
         
-        // OPTIMIZATION: Render on demand instead of continuous loop
         function animate() {
             requestAnimationFrame(animate);
-            
-            // Only render when something has changed
-            if (needsRender) {
-                renderer.render(scene, camera);
-                needsRender = false;
-            }
+            updateFPS();
+            renderer.render(scene, camera);
         }
         animate();
         
@@ -1955,7 +1993,6 @@
             camera.aspect = window.innerWidth / window.innerHeight;
             camera.updateProjectionMatrix();
             renderer.setSize(window.innerWidth, window.innerHeight);
-            requestRenderIfNeeded();
         });
     </script>
 </body>
