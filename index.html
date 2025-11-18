@@ -381,6 +381,7 @@
                     <button id="exportObjBtn" disabled>EXPORT OBJ</button>
                     <button id="exportPlyBtn" disabled>EXPORT PLY</button>
                     <button id="loadToCanvasBtn" disabled>LOAD TO CANVAS</button>
+                    <button id="duplicateBtn" disabled>DUPLICATE</button>
                     <button id="deleteBtn" disabled>DELETE</button>
                 </div>
                 
@@ -1065,7 +1066,13 @@
             }
         }
         
-        // Create volumetric mesh from drawing
+        // Shared geometry cache for optimization
+        const geometryCache = {
+            sphere: new THREE.SphereGeometry(0.08, 8, 8),
+            icosahedron: new THREE.IcosahedronGeometry(0.08, 1)
+        };
+        
+        // Create volumetric mesh from drawing (optimized with instancing)
         function createVolumetricMesh(imageData, color, geometryType) {
             const spheres = [];
             const sampleStep = 2;
@@ -1097,15 +1104,13 @@
             
             if (spheres.length === 0) return null;
             
+            // Use merged geometry for better performance
             const geometry = new THREE.BufferGeometry();
             const vertices = [];
             const colors = [];
-            const sphereRadius = 0.08;
             
-            const sphereGeo = geometryType === 'individual' 
-                ? new THREE.IcosahedronGeometry(sphereRadius, 1)
-                : new THREE.SphereGeometry(sphereRadius, 8, 8);
-            const spherePositions = sphereGeo.attributes.position.array;
+            const baseGeo = geometryType === 'individual' ? geometryCache.icosahedron : geometryCache.sphere;
+            const spherePositions = baseGeo.attributes.position.array;
             
             spheres.forEach(sphere => {
                 for (let i = 0; i < spherePositions.length; i += 3) {
@@ -1218,6 +1223,7 @@
             document.getElementById('exportObjBtn').disabled = false;
             document.getElementById('exportPlyBtn').disabled = false;
             document.getElementById('loadToCanvasBtn').disabled = false;
+            document.getElementById('duplicateBtn').disabled = false;
         }
         
         function deselectObject() {
@@ -1228,15 +1234,65 @@
             document.getElementById('exportObjBtn').disabled = true;
             document.getElementById('exportPlyBtn').disabled = true;
             document.getElementById('loadToCanvasBtn').disabled = true;
+            document.getElementById('duplicateBtn').disabled = true;
         }
         
         document.getElementById('deleteBtn').addEventListener('click', () => {
             if (selectedObject) {
                 scene.remove(selectedObject);
+                if (selectedObject.geometry) selectedObject.geometry.dispose();
+                if (selectedObject.material) {
+                    if (selectedObject.material.map) selectedObject.material.map.dispose();
+                    selectedObject.material.dispose();
+                }
                 objects = objects.filter(obj => obj !== selectedObject);
                 deselectObject();
                 updateObjectList();
             }
+        });
+        
+        // Duplicate object
+        document.getElementById('duplicateBtn').addEventListener('click', () => {
+            if (!selectedObject) return;
+            
+            const original = selectedObject;
+            let mesh;
+            
+            if (original.userData.isVolume && original.userData.sphereData) {
+                // Clone volumetric mesh
+                const geometry = original.geometry.clone();
+                const material = original.material.clone();
+                mesh = new THREE.Mesh(geometry, material);
+                mesh.userData.sphereData = [...original.userData.sphereData];
+                mesh.userData.geometryType = original.userData.geometryType;
+                mesh.userData.isVolume = true;
+            } else {
+                // Clone plane mesh
+                const geometry = original.geometry.clone();
+                const material = original.material.clone();
+                if (original.material.map) {
+                    material.map = original.material.map.clone();
+                    material.map.needsUpdate = true;
+                }
+                mesh = new THREE.Mesh(geometry, material);
+                mesh.userData.canvasData = original.userData.canvasData;
+                mesh.userData.isVolume = false;
+            }
+            
+            // Copy transformation
+            mesh.position.copy(original.position);
+            mesh.position.x += 0.5;
+            mesh.rotation.copy(original.rotation);
+            mesh.scale.copy(original.scale);
+            
+            mesh.userData.id = ++objectCounter;
+            mesh.userData.name = `${original.userData.name}-copy`;
+            
+            scene.add(mesh);
+            objects.push(mesh);
+            
+            updateObjectList();
+            selectObject(mesh);
         });
         
         // Rename modal
@@ -1347,12 +1403,9 @@
                 geometry = new THREE.BufferGeometry();
                 const vertices = [];
                 const colors = [];
-                const sphereRadius = 0.08;
                 
-                const sphereGeo = geometryType === 'individual'
-                    ? new THREE.IcosahedronGeometry(sphereRadius, 1)
-                    : new THREE.SphereGeometry(sphereRadius, 8, 8);
-                const spherePositions = sphereGeo.attributes.position.array;
+                const baseGeo = geometryType === 'individual' ? geometryCache.icosahedron : geometryCache.sphere;
+                const spherePositions = baseGeo.attributes.position.array;
                 
                 spheres.forEach(sphere => {
                     for (let i = 0; i < spherePositions.length; i += 3) {
@@ -1533,7 +1586,6 @@
             touches = Array.from(e.touches);
             
             if (touches.length === 1) {
-                // Single touch - orbit or gizmo interaction
                 getMousePosition(e);
                 raycaster.setFromCamera(mouse, camera);
                 
@@ -1546,29 +1598,7 @@
                     activeAxis = intersectedObj.userData.axis;
                     activeGizmo = intersectedObj.userData.gizmoType;
                     
-                    const cameraDir = new THREE.Vector3();
-                    camera.getWorldDirection(cameraDir);
-                    
-                    if (activeGizmo === 'translate') {
-                        if (activeAxis === 'x') {
-                            const normal = new THREE.Vector3(0, 0, 1).cross(new THREE.Vector3(1, 0, 0));
-                            if (normal.length() < 0.1) normal.set(0, 1, 0);
-                            normal.normalize();
-                            dragPlane.setFromNormalAndCoplanarPoint(normal, selectedObject.position);
-                        } else if (activeAxis === 'y') {
-                            const normal = new THREE.Vector3(1, 0, 0).cross(new THREE.Vector3(0, 1, 0));
-                            if (normal.length() < 0.1) normal.set(0, 0, 1);
-                            normal.normalize();
-                            dragPlane.setFromNormalAndCoplanarPoint(normal, selectedObject.position);
-                        } else if (activeAxis === 'z') {
-                            const normal = new THREE.Vector3(0, 1, 0).cross(new THREE.Vector3(0, 0, 1));
-                            if (normal.length() < 0.1) normal.set(1, 0, 0);
-                            normal.normalize();
-                            dragPlane.setFromNormalAndCoplanarPoint(normal, selectedObject.position);
-                        }
-                    } else {
-                        dragPlane.setFromNormalAndCoplanarPoint(cameraDir.negate(), selectedObject.position);
-                    }
+                    setupGizmoDragPlane();
                     
                     raycaster.ray.intersectPlane(dragPlane, dragStart);
                     objectStartPosition.copy(selectedObject.position);
@@ -1586,7 +1616,6 @@
                 previousMousePosition = { x: touches[0].clientX, y: touches[0].clientY };
                 
             } else if (touches.length === 2) {
-                // Two finger - pinch to zoom and pan
                 lastPinchDistance = getTouchDistance(touches[0], touches[1]);
                 lastTouchCenter = getTouchCenter(touches[0], touches[1]);
                 isPinching = true;
@@ -1594,6 +1623,35 @@
             
             e.preventDefault();
         }, { passive: false });
+        
+        function setupGizmoDragPlane() {
+            const cameraDir = new THREE.Vector3();
+            camera.getWorldDirection(cameraDir);
+            
+            if (activeGizmo === 'translate') {
+                const axisVector = new THREE.Vector3();
+                if (activeAxis === 'x') axisVector.set(1, 0, 0);
+                else if (activeAxis === 'y') axisVector.set(0, 1, 0);
+                else if (activeAxis === 'z') axisVector.set(0, 0, 1);
+                
+                // Create a plane perpendicular to camera that contains the axis
+                let normal = new THREE.Vector3().crossVectors(cameraDir, axisVector);
+                if (normal.length() < 0.01) {
+                    // Camera aligned with axis, use a perpendicular vector
+                    if (activeAxis === 'x') normal.set(0, 1, 0);
+                    else if (activeAxis === 'y') normal.set(1, 0, 0);
+                    else normal.set(0, 1, 0);
+                }
+                normal.normalize();
+                
+                // Now create perpendicular to this and the axis
+                const planeNormal = new THREE.Vector3().crossVectors(axisVector, normal).normalize();
+                dragPlane.setFromNormalAndCoplanarPoint(planeNormal, selectedObject.position);
+            } else {
+                // For rotate and scale, use camera-facing plane
+                dragPlane.setFromNormalAndCoplanarPoint(cameraDir.negate(), selectedObject.position);
+            }
+        }
         
         // Touch move
         threeCanvas.addEventListener('touchmove', (e) => {
@@ -1606,48 +1664,9 @@
                 
                 if (isDraggingGizmo && selectedObject) {
                     raycaster.setFromCamera(mouse, camera);
-                    raycaster.ray.intersectPlane(dragPlane, dragCurrent);
                     
-                    if (activeGizmo === 'translate') {
-                        const delta = dragCurrent.clone().sub(dragStart);
-                        
-                        if (activeAxis === 'x') {
-                            selectedObject.position.x = objectStartPosition.x + delta.x;
-                        } else if (activeAxis === 'y') {
-                            selectedObject.position.y = objectStartPosition.y + delta.y;
-                        } else if (activeAxis === 'z') {
-                            selectedObject.position.z = objectStartPosition.z + delta.z;
-                        }
-                        
-                        updateGizmoVisibility();
-                        
-                    } else if (activeGizmo === 'rotate') {
-                        const offset = dragCurrent.clone().sub(selectedObject.position);
-                        const currentAngle = Math.atan2(offset.y, offset.x);
-                        const deltaAngle = currentAngle - initialMouseAngle;
-                        
-                        if (activeAxis === 'x') {
-                            selectedObject.rotation.x = objectStartRotation.x + deltaAngle;
-                        } else if (activeAxis === 'y') {
-                            selectedObject.rotation.y = objectStartRotation.y + deltaAngle;
-                        } else if (activeAxis === 'z') {
-                            selectedObject.rotation.z = objectStartRotation.z + deltaAngle;
-                        }
-                        
-                    } else if (activeGizmo === 'scale') {
-                        const startDist = dragStart.distanceTo(selectedObject.position);
-                        const currentDist = dragCurrent.distanceTo(selectedObject.position);
-                        const scaleFactor = currentDist / startDist;
-                        
-                        if (activeAxis === 'x') {
-                            selectedObject.scale.x = Math.max(0.1, objectStartScale.x * scaleFactor);
-                        } else if (activeAxis === 'y') {
-                            selectedObject.scale.y = Math.max(0.1, objectStartScale.y * scaleFactor);
-                        } else if (activeAxis === 'z') {
-                            selectedObject.scale.z = Math.max(0.1, objectStartScale.z * scaleFactor);
-                        }
-                        
-                        updateGizmoVisibility();
+                    if (raycaster.ray.intersectPlane(dragPlane, dragCurrent)) {
+                        performGizmoTransform();
                     }
                 } else if (isOrbiting) {
                     const deltaX = touches[0].clientX - previousMousePosition.x;
@@ -1701,6 +1720,50 @@
             e.preventDefault();
         }, { passive: false });
         
+        function performGizmoTransform() {
+            if (activeGizmo === 'translate') {
+                const delta = dragCurrent.clone().sub(dragStart);
+                
+                if (activeAxis === 'x') {
+                    selectedObject.position.x = objectStartPosition.x + delta.x;
+                } else if (activeAxis === 'y') {
+                    selectedObject.position.y = objectStartPosition.y + delta.y;
+                } else if (activeAxis === 'z') {
+                    selectedObject.position.z = objectStartPosition.z + delta.z;
+                }
+                
+                updateGizmoVisibility();
+                
+            } else if (activeGizmo === 'rotate') {
+                const offset = dragCurrent.clone().sub(selectedObject.position);
+                const currentAngle = Math.atan2(offset.y, offset.x);
+                const deltaAngle = currentAngle - initialMouseAngle;
+                
+                if (activeAxis === 'x') {
+                    selectedObject.rotation.x = objectStartRotation.x + deltaAngle;
+                } else if (activeAxis === 'y') {
+                    selectedObject.rotation.y = objectStartRotation.y + deltaAngle;
+                } else if (activeAxis === 'z') {
+                    selectedObject.rotation.z = objectStartRotation.z + deltaAngle;
+                }
+                
+            } else if (activeGizmo === 'scale') {
+                const startDist = dragStart.distanceTo(selectedObject.position);
+                const currentDist = dragCurrent.distanceTo(selectedObject.position);
+                const scaleFactor = currentDist / (startDist || 1);
+                
+                if (activeAxis === 'x') {
+                    selectedObject.scale.x = Math.max(0.1, objectStartScale.x * scaleFactor);
+                } else if (activeAxis === 'y') {
+                    selectedObject.scale.y = Math.max(0.1, objectStartScale.y * scaleFactor);
+                } else if (activeAxis === 'z') {
+                    selectedObject.scale.z = Math.max(0.1, objectStartScale.z * scaleFactor);
+                }
+                
+                updateGizmoVisibility();
+            }
+        }
+        
         // Mouse controls
         threeCanvas.addEventListener('mousedown', (e) => {
             if (isDraggingPanel) return;
@@ -1731,29 +1794,7 @@
                     activeAxis = intersectedObj.userData.axis;
                     activeGizmo = intersectedObj.userData.gizmoType;
                     
-                    const cameraDir = new THREE.Vector3();
-                    camera.getWorldDirection(cameraDir);
-                    
-                    if (activeGizmo === 'translate') {
-                        if (activeAxis === 'x') {
-                            const normal = new THREE.Vector3(0, 0, 1).cross(new THREE.Vector3(1, 0, 0));
-                            if (normal.length() < 0.1) normal.set(0, 1, 0);
-                            normal.normalize();
-                            dragPlane.setFromNormalAndCoplanarPoint(normal, selectedObject.position);
-                        } else if (activeAxis === 'y') {
-                            const normal = new THREE.Vector3(1, 0, 0).cross(new THREE.Vector3(0, 1, 0));
-                            if (normal.length() < 0.1) normal.set(0, 0, 1);
-                            normal.normalize();
-                            dragPlane.setFromNormalAndCoplanarPoint(normal, selectedObject.position);
-                        } else if (activeAxis === 'z') {
-                            const normal = new THREE.Vector3(0, 1, 0).cross(new THREE.Vector3(0, 0, 1));
-                            if (normal.length() < 0.1) normal.set(1, 0, 0);
-                            normal.normalize();
-                            dragPlane.setFromNormalAndCoplanarPoint(normal, selectedObject.position);
-                        }
-                    } else {
-                        dragPlane.setFromNormalAndCoplanarPoint(cameraDir.negate(), selectedObject.position);
-                    }
+                    setupGizmoDragPlane();
                     
                     raycaster.ray.intersectPlane(dragPlane, dragStart);
                     objectStartPosition.copy(selectedObject.position);
@@ -1806,48 +1847,9 @@
                 updateCameraPosition();
             } else if (isDraggingGizmo && selectedObject) {
                 raycaster.setFromCamera(mouse, camera);
-                raycaster.ray.intersectPlane(dragPlane, dragCurrent);
                 
-                if (activeGizmo === 'translate') {
-                    const delta = dragCurrent.clone().sub(dragStart);
-                    
-                    if (activeAxis === 'x') {
-                        selectedObject.position.x = objectStartPosition.x + delta.x;
-                    } else if (activeAxis === 'y') {
-                        selectedObject.position.y = objectStartPosition.y + delta.y;
-                    } else if (activeAxis === 'z') {
-                        selectedObject.position.z = objectStartPosition.z + delta.z;
-                    }
-                    
-                    updateGizmoVisibility();
-                    
-                } else if (activeGizmo === 'rotate') {
-                    const offset = dragCurrent.clone().sub(selectedObject.position);
-                    const currentAngle = Math.atan2(offset.y, offset.x);
-                    const deltaAngle = currentAngle - initialMouseAngle;
-                    
-                    if (activeAxis === 'x') {
-                        selectedObject.rotation.x = objectStartRotation.x + deltaAngle;
-                    } else if (activeAxis === 'y') {
-                        selectedObject.rotation.y = objectStartRotation.y + deltaAngle;
-                    } else if (activeAxis === 'z') {
-                        selectedObject.rotation.z = objectStartRotation.z + deltaAngle;
-                    }
-                    
-                } else if (activeGizmo === 'scale') {
-                    const startDist = dragStart.distanceTo(selectedObject.position);
-                    const currentDist = dragCurrent.distanceTo(selectedObject.position);
-                    const scaleFactor = currentDist / startDist;
-                    
-                    if (activeAxis === 'x') {
-                        selectedObject.scale.x = Math.max(0.1, objectStartScale.x * scaleFactor);
-                    } else if (activeAxis === 'y') {
-                        selectedObject.scale.y = Math.max(0.1, objectStartScale.y * scaleFactor);
-                    } else if (activeAxis === 'z') {
-                        selectedObject.scale.z = Math.max(0.1, objectStartScale.z * scaleFactor);
-                    }
-                    
-                    updateGizmoVisibility();
+                if (raycaster.ray.intersectPlane(dragPlane, dragCurrent)) {
+                    performGizmoTransform();
                 }
             }
             
